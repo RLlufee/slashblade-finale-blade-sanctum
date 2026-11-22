@@ -142,23 +142,23 @@ public final class SpatialFractureFx extends FxInstance {
       this.axisUp = new Vector3f(this.axisRight).cross(this.axisForward).normalize();
 
       // 施法者前方双竖直法阵自适应间距与尺寸：
-      // 常规距离：第一环（后主阵）在前方 4.6 格、半径 9.25；第二环（前聚能环）在前方 9.4 格、半径 6.65。
-      // 第一人称下视角分离度 > 2:1，形成极清澈的“外紫大环套内青聚焦环”隧道景深；近距施法自动按比例压缩不穿模。
+      // 常规距离：第一环（后主阵）在前方 4.6 格、半径 12.5；第二环（前聚能环）在前方 12.2 格、半径 8.5。
+      // 第一人称下形成极清澈的“外紫宏大主阵套内青金聚焦炮膛”隧道景深；近距施法自动按比例压缩不穿模。
       float sc = clamp(this.scale, 0.65F, 1.6F);
       this.distScale = clamp((float)(this.rayDist / 14.0), 0.50F, 1.0F);
       double d1;
       double d2;
       if (this.rayDist >= 12.0) {
-         d1 = clampD(4.6 * sc, 3.6, 5.8);
-         d2 = clampD(9.4 * sc, d1 + 3.2, Math.min(13.5, this.rayDist * 0.56));
+         d1 = clampD(4.6 * sc, 3.6, 5.8);  //第一环距离
+         d2 = clampD(12.2 * sc, d1 + 3.2, Math.min(13.5, this.rayDist * 0.56)); //第二环距离
       } else {
          d1 = clampD(this.rayDist * 0.28, 1.7, 3.8);
          d2 = clampD(this.rayDist * 0.60, d1 + 1.15, Math.max(d1 + 1.15, this.rayDist - 1.0));
       }
       this.ring1Center = castAnchor.add(this.beamDir.scale(d1));
       this.ring2Center = castAnchor.add(this.beamDir.scale(d2));
-      this.ring1Radius = 9.25F * sc * this.distScale;
-      this.ring2Radius = 6.65F * sc * this.distScale;
+      this.ring1Radius = 12.5F * sc * this.distScale; //第一环大小
+      this.ring2Radius = 8.5F * sc * this.distScale; //第二环大小
 
       // 光束从第一环中心略偏后起射，穿透第二环轰抵目标核心（避免贴近眼睛导致第一人称糊白）
       Vec3 start = this.ring1Center.subtract(this.beamDir.scale(0.35 * this.distScale));
@@ -356,6 +356,11 @@ public final class SpatialFractureFx extends FxInstance {
          play(level, this.ring2Center, SoundEvents.RESPAWN_ANCHOR_CHARGE, 1.3F, 1.18F);
       }
 
+      // ── 双环输能通道合拢共鸣声 ──
+      if (age == 16) {
+         play(level, this.ring1Center.lerp(this.ring2Center, 0.5), SoundEvents.AMETHYST_BLOCK_RESONATE, 1.35F, 1.48F);
+      }
+
       // ── 第三幕：双环加速对旋与临界收束 ──
       if (age == 22) {
          play(level, this.ring2Center, SoundEvents.BEACON_POWER_SELECT, 1.8F, 0.95F);
@@ -365,16 +370,41 @@ public final class SpatialFractureFx extends FxInstance {
          play(level, this.ring2Center, SoundEvents.AMETHYST_BLOCK_RESONATE, 1.8F, 1.85F);
       }
 
-      // 蓄能期间：从双环外缘向炮口轴心吸入细微光丝火花
-      if (age >= CHARGE_START && age < BEAM_FIRE) {
-         for (int i = 0; i < 3; i++) {
+      // 蓄能期间：从第一环内外环面向第二环中心奇点高速灌注能量火花（按真实距离求解初速，确保完整汇入炮口不中途消亡）
+      if (age >= (int)RING2_START + 3 && age < BEAM_FIRE) {
+         int count = age >= CHARGE_START ? 7 : 4;
+         double drag = 0.96;
+         for (int i = 0; i < count; i++) {
             double ang = this.random.nextDouble() * FxMath.TAU;
-            float r = this.ring1Radius * (0.9F + this.random.nextFloat() * 0.45F);
+            // 内外两带分布：兼顾第一人称中环视野与第三人称外圈宏大轮廓
+            boolean innerBand = (i & 1) == 0;
+            float r = this.ring1Radius * (innerBand ? (0.30F + this.random.nextFloat() * 0.34F) : (0.64F + this.random.nextFloat() * 0.42F));
             Vec3 from = this.ring1Center
                .add(this.axisRight.x * Math.cos(ang) * r, this.axisRight.y * Math.cos(ang) * r, this.axisRight.z * Math.cos(ang) * r)
                .add(this.axisUp.x * Math.sin(ang) * r, this.axisUp.y * Math.sin(ang) * r, this.axisUp.z * Math.sin(ang) * r);
-            Vec3 vel = this.ring2Center.subtract(from).normalize().scale(0.55 + this.random.nextDouble() * 0.35);
-            this.sparks.add(new Spark(from, new Vector3f((float)vel.x, (float)vel.y, (float)vel.z), 8 + this.random.nextInt(5), i % 2 == 0 ? CYAN : VOID, 0.0F, 0.96));
+            // 目标轻微偏移至第二环奇点核近周，呈现旋卷汇入感
+            double aimAng = ang - 0.55;
+            float aimR = this.ring2Radius * (0.04F + this.random.nextFloat() * 0.14F);
+            Vec3 to = this.ring2Center
+               .add(this.axisRight.x * Math.cos(aimAng) * aimR, this.axisRight.y * Math.cos(aimAng) * aimR, this.axisRight.z * Math.cos(aimAng) * aimR)
+               .add(this.axisUp.x * Math.sin(aimAng) * aimR, this.axisUp.y * Math.sin(aimAng) * aimR, this.axisUp.z * Math.sin(aimAng) * aimR);
+            Vec3 delta = to.subtract(from);
+            double dist = delta.length();
+            if (dist > 0.2) {
+               int life = Math.max(4, Math.min(11, (int)(BEAM_FIRE - age + 1)));
+               int actualLife = Math.min(life, 7 + this.random.nextInt(4));
+               double geomFactor = (1.0 - drag) / Math.max(0.05, 1.0 - Math.pow(drag, actualLife));
+               double speed = dist * geomFactor * (0.98 + this.random.nextDouble() * 0.14);
+               Vec3 vel = delta.scale(speed / dist);
+               float[] tint = switch (i % 4) {
+                  case 0 -> CYAN;
+                  case 1 -> VOID;
+                  case 2 -> GOLD;
+                  default -> MAGENTA;
+               };
+               float widthScale = innerBand ? 1.85F : 2.35F;
+               this.sparks.add(new Spark(from, new Vector3f((float)vel.x, (float)vel.y, (float)vel.z), actualLife, tint, 0.0F, drag, widthScale));
+            }
          }
       }
 
@@ -626,6 +656,21 @@ public final class SpatialFractureFx extends FxInstance {
       return base + 0.5F * MAX_SPIN_BOOST * accelDur + post;
    }
 
+   /** 严格单调且一阶导数连续的通道流向积分相位（蓄能期平滑提速，杜绝跳速、倒流与临界段过频频闪）。 */
+   private static float conduitFlowPhase(float a) {
+      float base = a * 0.082F;
+      if (a <= CHARGE_START) {
+         return base;
+      }
+      float accelDur = BEAM_FIRE - CHARGE_START;
+      float boost = 0.072F;
+      if (a <= BEAM_FIRE) {
+         float u = (a - CHARGE_START) / accelDur;
+         return base + 0.5F * boost * accelDur * u * u;
+      }
+      return base + 0.5F * boost * accelDur + boost * (a - BEAM_FIRE);
+   }
+
    private float fieldReveal(float a) {
       return a < BEAM_HIT ? 0.0F : FxMath.easeOutCubic(FxMath.window(a, BEAM_HIT, FIELD_REVEAL_END));
    }
@@ -739,15 +784,23 @@ public final class SpatialFractureFx extends FxInstance {
          return;
       }
       float spin = gateSpinAngle(a);
+      float charge = FxMath.window(a, CHARGE_START, BEAM_FIRE);
       float compress = FxMath.easeInCubic(FxMath.window(a, COMPRESS_START, BEAM_FIRE));
       float recoil = a >= BEAM_FIRE && a < BEAM_FIRE + 9.0F ? (float)Math.sin(Math.PI * FxMath.window(a, BEAM_FIRE, BEAM_FIRE + 9.0F)) * 0.14F : 0.0F;
+      float backKick = a >= BEAM_FIRE && a < BEAM_FIRE + 10.0F
+         ? (float)Math.sin(Math.PI * FxMath.window(a, BEAM_FIRE, BEAM_FIRE + 10.0F)) * 0.38F * this.distScale
+         : 0.0F;
+
+      Vector3f c1 = frame.rel(this.ring1Center);
+      Vector3f c2 = frame.rel(this.ring2Center.subtract(this.beamDir.scale(backKick)));
+      float near1 = nearFade(c1);
+      float near2 = nearFade(c2);
 
       // 第一环暗紫流场衬底环带（中心通透不遮挡视野，仅在符文环带背后压暗以提升白天晴空对比度）
       float open1 = FxMath.easeOutCubic(FxMath.window(a, RING1_START, RING1_END));
+      float r1 = this.ring1Radius * (0.20F + 0.80F * open1) * (1.0F - 0.10F * compress + recoil) * (0.50F + 0.50F * gateFade);
       if (open1 > 0.01F) {
-         Vector3f c1 = frame.rel(this.ring1Center);
-         float r1 = this.ring1Radius * (0.20F + 0.80F * open1) * (1.0F - 0.10F * compress + recoil) * (0.50F + 0.50F * gateFade);
-         float alpha = open1 * gateFade * 0.58F * nearFade(c1);
+         float alpha = open1 * gateFade * 0.58F * near1;
          if (alpha > 0.005F) {
             b.begin(Style.SLASH_ARC, 0.55F, 0.25F, 5.2F, 0.85F, open1, 0.0F);
             b.slashArc(c1, this.axisRight, this.axisUp, r1 * 0.62F, r1 * 1.05F, spin, spin + (float)Math.PI * 1.12F, 18, DEEP_ABYSS[0], DEEP_ABYSS[1], DEEP_ABYSS[2], alpha);
@@ -757,12 +810,11 @@ public final class SpatialFractureFx extends FxInstance {
          }
       }
 
-      // 第二环暗紫炮膛环框衬底 + 蓄能奇点纯黑微核
+      // 第二环暗紫炮膛环框衬底 + 双环间星云漏斗暗底 + 蓄能奇点纯黑微核
       float open2 = FxMath.easeOutCubic(FxMath.window(a, RING2_START, RING2_END));
+      float r2 = this.ring2Radius * (0.20F + 0.80F * open2) * (1.0F - 0.14F * compress + recoil * 1.25F) * (0.50F + 0.50F * gateFade);
       if (open2 > 0.01F) {
-         Vector3f c2 = frame.rel(this.ring2Center);
-         float r2 = this.ring2Radius * (0.20F + 0.80F * open2) * (1.0F - 0.14F * compress + recoil * 1.25F) * (0.50F + 0.50F * gateFade);
-         float alpha = open2 * gateFade * 0.62F * nearFade(c2);
+         float alpha = open2 * gateFade * 0.62F * near2;
          if (alpha > 0.005F) {
             float rot2 = -spin * 1.45F;
             b.begin(Style.SLASH_ARC, 0.55F, 0.25F, 5.2F, 0.85F, open2, 0.0F);
@@ -771,13 +823,38 @@ public final class SpatialFractureFx extends FxInstance {
             b.begin(Style.PLASMA_BEAM, 0.68F, 0.2F, 1.0F, -2.2F, 0.0F, 0.5F);
             b.torus(c2, this.axisForward, r2 * 1.04F, Math.max(0.065F, r2 * 0.038F), 28, 5, -spin * 1.2F, DEEP_ABYSS[0], DEEP_ABYSS[1], DEEP_ABYSS[2], alpha * 0.90F);
          }
+
+         // 双环间内外双腔星云等离子流场壁暗紫衬底（12 ~ 44 tick）：稳稳衬出上层紫/品红/冰青/金四色流场的高反差通透感
+         if (a >= RING2_START + 1.0F && a < BEAM_FIRE + 11.0F) {
+            float grow = FxMath.easeOutCubic(FxMath.window(a, RING2_START + 1.0F, RING2_END));
+            float wallOut = 1.0F - FxMath.easeInCubic(FxMath.window(a, BEAM_FIRE + 1.0F, BEAM_FIRE + 11.0F));
+            float wallAlpha = grow * wallOut * Math.min(near1, near2);
+            if (wallAlpha > 0.01F) {
+               Vector3f cEnd = new Vector3f(c1).lerp(c2, grow);
+               float pinch = 1.0F - 0.14F * compress;
+               float outR1 = r1 * 0.90F * pinch;
+               float outR2 = FxMath.lerp(outR1, r2 * 0.87F * pinch, grow);
+               float flowWave = conduitFlowPhase(a) % 1.0F;
+
+               // 仅外炮膛铺设 1 层深渊暗紫涡流衬底（把白天晴空压暗成宇宙底色，衬出内部高饱和彩色星云与细锐流线）
+               b.begin(Style.PLASMA_BEAM, 0.56F, 0.25F, 1.0F, -5.6F, 1.0F - wallOut, flowWave);
+               b.cylinder(c1, cEnd, outR1, outR2, 28, spin * 1.1F, DEEP_ABYSS[0], DEEP_ABYSS[1], DEEP_ABYSS[2], wallAlpha * (0.44F + 0.22F * charge));
+
+               // 中轴引导能量芯细暗鞘（连通第一环中心与第二环中心）
+               float axisR1 = Math.max(0.10F, r1 * 0.016F) * (1.0F - 0.38F * compress);
+               float axisR2 = Math.max(0.16F, r2 * 0.032F) * (1.0F - 0.32F * compress);
+               b.begin(Style.PLASMA_BEAM, 0.62F, 0.2F, 1.0F, -9.5F, 1.0F - wallOut, (conduitFlowPhase(a) * 1.4F) % 1.0F);
+               b.cylinder(c1, cEnd, axisR1, FxMath.lerp(axisR1, axisR2, grow), 14, spin * 2.0F, DEEP_ABYSS[0], DEEP_ABYSS[1], DEEP_ABYSS[2], wallAlpha * (0.45F + 0.25F * charge));
+            }
+         }
+
          // 临界压缩时的炮口暗核（让白青压缩核心显得无比深邃锋利）
          if (a >= CHARGE_START + 2.0F && a < BEAM_FIRE + 2.0F) {
-            float charge = FxMath.window(a, CHARGE_START + 2.0F, BEAM_FIRE);
-            float coreR = this.ring2Radius * (0.16F + 0.16F * charge) * (1.0F - 0.35F * compress);
+            float chargeCore = FxMath.window(a, CHARGE_START + 2.0F, BEAM_FIRE);
+            float coreR = this.ring2Radius * (0.16F + 0.16F * chargeCore) * (1.0F - 0.35F * compress);
             b.geoCenter(c2);
             b.begin(Style.CORONA, 0.45F, 0.2F, 2.0F, 1.2F, 1.2F, 0.6F);
-            b.deformedSphere(c2, coreR, 12, 16, a * 0.12F, 0.06F, 1.5F, a * 0.4F, DEEP_ABYSS[0], DEEP_ABYSS[1], DEEP_ABYSS[2], charge * 0.90F * nearFade(c2));
+            b.deformedSphere(c2, coreR, 12, 16, a * 0.12F, 0.06F, 1.5F, a * 0.4F, DEEP_ABYSS[0], DEEP_ABYSS[1], DEEP_ABYSS[2], chargeCore * 0.90F * near2);
             b.clearGeoCenter();
          }
       }
@@ -890,28 +967,30 @@ public final class SpatialFractureFx extends FxInstance {
 
       // ── 第一环（后方大主阵 · 虚空紫星盘 + 6 顶点六芒星卫星阵，0 ~ 12 tick 率先优雅展开） ──
       float open1 = FxMath.easeOutCubic(FxMath.window(a, RING1_START, RING1_END));
+      float r1Now = this.ring1Radius * (0.20F + 0.80F * open1) * (1.0F - 0.10F * compress + recoil) * (0.48F + 0.52F * gateFade);
       float alpha1 = open1 * gateFade * near1;
       if (alpha1 > 0.005F) {
-         float r1 = this.ring1Radius * (0.20F + 0.80F * open1) * (1.0F - 0.10F * compress + recoil) * (0.48F + 0.52F * gateFade);
-         float emBoost = 1.0F + 0.65F * charge + 0.75F * firePulse;
+         float r1 = r1Now;
+         // 蓄力期温和抬升发光，把高光预算留给双环间流动通道与临界瞬间，杜绝环面过曝发白
+         float emBoost = 0.88F + 0.32F * charge + 0.55F * firePulse;
 
          // 1.1 主法阵盘面（Rune variant=1 逐弧扫绘展开）
          Vector3f u1 = rotatedBasis(this.axisRight, this.axisUp, spin, r1);
          Vector3f v1 = rotatedBasis(this.axisRight, this.axisUp, spin + 1.5707964F, r1);
-         g.begin(Style.RUNE, 2.8F * emBoost, 0.25F, spin * 0.55F, this.seedFloat + 7.0F, 1.0F, open1);
-         g.quad(c1, u1, v1, VOID[0], VOID[1], VOID[2], alpha1 * 0.95F);
+         g.begin(Style.RUNE, 2.2F * emBoost, 0.25F, spin * 0.55F, this.seedFloat + 7.0F, 1.0F, open1);
+         g.quad(c1, u1, v1, VOID[0], VOID[1], VOID[2], alpha1 * 0.92F);
 
          // 1.2 外层 3D 立体金属感护环（侧面看有真实厚度）+ 内虚线金刻度环
-         g.begin(Style.RIBBON, 3.2F * emBoost, 0.2F, 6.0F, 8.0F, 5.0F, 0.45F);
-         g.torus(c1, this.axisForward, r1 * 1.02F, Math.max(0.04F, r1 * 0.022F), 36, 5, spin * 0.8F, CYAN[0], CYAN[1], CYAN[2], alpha1 * 0.88F);
-         g.begin(Style.RING, 3.0F * emBoost, 0.2F, 0.88F, 0.014F, 48.0F, -0.55F - charge * 1.4F);
-         g.quad(c1, new Vector3f(this.axisRight).mul(r1 * 1.03F), new Vector3f(this.axisUp).mul(r1 * 1.03F), GOLD[0], GOLD[1], GOLD[2], alpha1 * 0.90F);
+         g.begin(Style.RIBBON, 2.4F * emBoost, 0.2F, 6.0F, 8.0F, 5.0F, 0.45F);
+         g.torus(c1, this.axisForward, r1 * 1.02F, Math.max(0.04F, r1 * 0.020F), 36, 5, spin * 0.8F, CYAN[0], CYAN[1], CYAN[2], alpha1 * 0.84F);
+         g.begin(Style.RING, 2.3F * emBoost, 0.2F, 0.88F, 0.014F, 48.0F, -0.55F - charge * 1.4F);
+         g.quad(c1, new Vector3f(this.axisRight).mul(r1 * 1.03F), new Vector3f(this.axisUp).mul(r1 * 1.03F), GOLD[0], GOLD[1], GOLD[2], alpha1 * 0.86F);
          g.end();
 
          // 1.3 正反旋转双六边形交织 12 角星骨架
-         float polyW = Math.max(0.042F, r1 * 0.018F);
-         this.drawVerticalPolygon(g, c1, r1 * 0.89F, 6, spin * 1.05F, polyW, CYAN, alpha1 * 0.92F, 3.6F * emBoost);
-         this.drawVerticalPolygon(g, c1, r1 * 0.78F, 6, -spin * 1.35F + 0.5236F, polyW * 0.85F, WHITE, alpha1 * 0.85F, 3.8F * emBoost);
+         float polyW = Math.max(0.042F, r1 * 0.016F);
+         this.drawVerticalPolygon(g, c1, r1 * 0.89F, 6, spin * 1.05F, polyW, CYAN, alpha1 * 0.88F, 2.6F * emBoost);
+         this.drawVerticalPolygon(g, c1, r1 * 0.78F, 6, -spin * 1.35F + 0.5236F, polyW * 0.85F, WHITE, alpha1 * 0.78F, 2.6F * emBoost);
          g.end();
 
          // 1.4 六方位顶点卫星小六芒星阵（随第一环外缘展开并反向自转）
@@ -928,24 +1007,15 @@ public final class SpatialFractureFx extends FxInstance {
                Vector3f su = rotatedBasis(this.axisRight, this.axisUp, -spin * 2.1F + i, satR);
                Vector3f sv = rotatedBasis(this.axisRight, this.axisUp, -spin * 2.1F + i + 1.5707964F, satR);
                float[] satCol = i % 2 == 0 ? CYAN : GOLD;
-               g.begin(Style.RUNE, 3.6F * emBoost, 0.15F, -spin * 1.8F, this.seedFloat + i * 2.7F, 0.0F, satOpen);
-               g.quad(satPos, su, sv, satCol[0], satCol[1], satCol[2], alpha1 * satOpen * 0.92F);
+               g.begin(Style.RUNE, 2.8F * emBoost, 0.15F, -spin * 1.8F, this.seedFloat + i * 2.7F, 0.0F, satOpen);
+               g.quad(satPos, su, sv, satCol[0], satCol[1], satCol[2], alpha1 * satOpen * 0.88F);
             }
             g.end();
          }
       }
 
-      // ── 衔接导引光丝：在 8 ~ 13 tick 从第一环中心射向第二环位置，优雅引出第二环展开 ──
-      if (a >= 8.0F && a < RING2_END + 2.0F) {
-         float guideProg = FxMath.easeOutCubic(FxMath.window(a, 8.0F, 12.0F));
-         float guideFade = 1.0F - FxMath.window(a, 13.0F, RING2_END + 2.0F);
-         if (guideProg > 0.01F && guideFade > 0.01F) {
-            Vector3f gEnd = frame.rel(this.ring1Center.lerp(this.ring2Center, guideProg));
-            g.begin(Style.RIBBON, 5.2F, 0.15F, 8.0F, 6.0F, 8.0F, 0.35F);
-            g.ribbon(List.of(c1, new Vector3f(c1).lerp(gEnd, 0.5F), gEnd), new float[]{0.03F, 0.07F, 0.02F}, new float[]{guideFade, guideFade, guideFade}, CYAN[0], CYAN[1], CYAN[2]);
-            g.end();
-         }
-      }
+      // ── 层级 ①：先导点火束 + 推进点火环（8 ~ 17 tick，由第一环中心点火直抵第二环并撑开第二环） ──
+      this.renderGateIgnitionGuide(g, frame, a, c1, r1Now, near1);
 
       // ── 第二环（前级聚能聚焦环 · 宇宙冰青与璨金八芒聚焦架 + 4 枚 3D 聚焦棱晶，11 ~ 22 tick 依次展开） ──
       float open2 = FxMath.easeOutCubic(FxMath.window(a, RING2_START, RING2_END));
@@ -958,34 +1028,34 @@ public final class SpatialFractureFx extends FxInstance {
       float alpha2 = open2 * gateFade * near2;
       if (alpha2 > 0.005F) {
          float r2 = this.ring2Radius * (0.16F + 0.84F * open2) * (1.0F - 0.14F * compress + recoil * 1.35F) * (0.48F + 0.52F * gateFade);
-         float emBoost = 1.0F + 0.80F * charge + 0.90F * firePulse;
+         float emBoost = 0.88F + 0.36F * charge + 0.65F * firePulse;
 
          // 2.1 反向高速旋转的六芒星聚焦主阵（冰青主色，与第一环虚空紫形成鲜明层次反差）
          float rot2 = -spin * 1.45F;
          Vector3f u2 = rotatedBasis(this.axisRight, this.axisUp, rot2, r2);
          Vector3f v2 = rotatedBasis(this.axisRight, this.axisUp, rot2 + 1.5707964F, r2);
-         g.begin(Style.RUNE, 3.2F * emBoost, 0.2F, rot2 * 0.7F, this.seedFloat + 29.0F, 0.0F, open2);
-         g.quad(c2, u2, v2, CYAN[0], CYAN[1], CYAN[2], alpha2 * 0.95F);
+         g.begin(Style.RUNE, 2.3F * emBoost, 0.2F, rot2 * 0.7F, this.seedFloat + 29.0F, 0.0F, open2);
+         g.quad(c2, u2, v2, CYAN[0], CYAN[1], CYAN[2], alpha2 * 0.90F);
 
          // 2.2 前后错位双层 3D 立体炮膛加速环（外环终焉金 + 前置内环冷白青）
-         g.begin(Style.RIBBON, 3.8F * emBoost, 0.2F, 6.5F, 9.0F, 6.0F, 0.45F);
-         g.torus(c2, this.axisForward, r2 * 1.04F, Math.max(0.045F, r2 * 0.028F), 32, 6, -spin * 1.2F, GOLD[0], GOLD[1], GOLD[2], alpha2 * 0.95F);
+         g.begin(Style.RIBBON, 2.6F * emBoost, 0.2F, 6.5F, 9.0F, 6.0F, 0.45F);
+         g.torus(c2, this.axisForward, r2 * 1.04F, Math.max(0.045F, r2 * 0.024F), 32, 6, -spin * 1.2F, GOLD[0], GOLD[1], GOLD[2], alpha2 * 0.90F);
          Vector3f c2Front = new Vector3f(c2).add(new Vector3f(this.axisForward).mul(0.28F * this.distScale));
-         g.torus(c2Front, this.axisForward, r2 * 0.76F, Math.max(0.032F, r2 * 0.020F), 28, 5, spin * 1.8F, CYAN[0], CYAN[1], CYAN[2], alpha2 * 0.90F);
-         g.begin(Style.RING, 3.4F * emBoost, 0.2F, 0.93F, 0.016F, 36.0F, 0.85F + charge * 1.8F);
-         g.quad(c2, new Vector3f(this.axisRight).mul(r2 * 1.06F), new Vector3f(this.axisUp).mul(r2 * 1.06F), WHITE[0], WHITE[1], WHITE[2], alpha2 * 0.85F);
+         g.torus(c2Front, this.axisForward, r2 * 0.76F, Math.max(0.032F, r2 * 0.018F), 28, 5, spin * 1.8F, CYAN[0], CYAN[1], CYAN[2], alpha2 * 0.86F);
+         g.begin(Style.RING, 2.4F * emBoost, 0.2F, 0.93F, 0.016F, 36.0F, 0.85F + charge * 1.8F);
+         g.quad(c2, new Vector3f(this.axisRight).mul(r2 * 1.06F), new Vector3f(this.axisUp).mul(r2 * 1.06F), WHITE[0], WHITE[1], WHITE[2], alpha2 * 0.78F);
          g.end();
 
          // 2.3 双交错正方形八芒聚焦架
-         float polyW = Math.max(0.038F, r2 * 0.020F);
-         this.drawVerticalPolygon(g, c2, r2 * 0.86F, 4, rot2 * 1.2F, polyW, GOLD, alpha2 * 0.90F, 3.8F * emBoost);
-         this.drawVerticalPolygon(g, c2, r2 * 0.86F, 4, rot2 * 1.2F + 0.785398F, polyW * 0.9F, CYAN, alpha2 * 0.90F, 4.0F * emBoost);
+         float polyW = Math.max(0.038F, r2 * 0.018F);
+         this.drawVerticalPolygon(g, c2, r2 * 0.86F, 4, rot2 * 1.2F, polyW, GOLD, alpha2 * 0.85F, 2.6F * emBoost);
+         this.drawVerticalPolygon(g, c2, r2 * 0.86F, 4, rot2 * 1.2F + 0.785398F, polyW * 0.9F, CYAN, alpha2 * 0.85F, 2.7F * emBoost);
          g.end();
 
          // 2.4 四方位 3D 立体聚焦棱晶（尖端指向炮口轴心，蓄能时向内紧缩，发射时向外弹震）
          float crystalDist = r2 * (1.16F - 0.18F * compress + 0.26F * firePulse);
          float crystalLen = r2 * 0.26F * open2;
-         g.begin(Style.GLOW, 5.2F * emBoost, 0.1F, 2.2F, 1.1F, 0.0F, 0.0F);
+         g.begin(Style.GLOW, 3.2F * emBoost, 0.1F, 2.6F, 1.4F, 0.0F, 0.0F);
          for (int i = 0; i < 4; i++) {
             float ang = rot2 * 0.85F + i * 1.5707964F;
             float cs = (float)Math.cos(ang);
@@ -996,62 +1066,516 @@ public final class SpatialFractureFx extends FxInstance {
             Vector3f su = new Vector3f(radial).mul(crystalLen);
             Vector3f sv = new Vector3f(tangent).mul(crystalLen * 0.42F);
             float[] tint = i % 2 == 0 ? GOLD : CYAN;
-            g.shard(pos, su, sv, this.axisForward, crystalLen * 0.32F, tint[0], tint[1], tint[2], alpha2);
+            g.shard(pos, su, sv, this.axisForward, crystalLen * 0.32F, tint[0], tint[1], tint[2], alpha2 * 0.92F);
          }
          g.end();
 
-         // 2.5 两环之间的 6 道锥形螺旋聚能通道（直观展现第一环向第二环高速输能加速）
-         float linkAlpha = FxMath.easeOutCubic(FxMath.window(a, RING2_START + 3.0F, RING2_END + 2.0F)) * gateFade * Math.min(near1, near2);
-         if (linkAlpha > 0.01F) {
-            float r1Now = this.ring1Radius * (0.20F + 0.80F * open1) * (1.0F - 0.10F * compress + recoil) * (0.48F + 0.52F * gateFade);
-            g.begin(Style.RIBBON, (2.6F + 3.2F * charge + 2.4F * firePulse), 0.15F, 7.0F, 8.0F, 10.0F + 10.0F * charge, 0.4F);
-            int segs = 12;
-            for (int k = 0; k < 6; k++) {
-               float baseAng = spin + k * (FxMath.TAU / 6.0F);
-               List<Vector3f> pts = new ArrayList<>(segs + 1);
-               float[] widths = new float[segs + 1];
-               float[] alphas = new float[segs + 1];
-               for (int i = 0; i <= segs; i++) {
-                  float u = (float)i / segs;
-                  float twist = baseAng + u * (0.85F + 1.4F * charge);
-                  float rr = FxMath.lerp(r1Now * 0.88F, r2 * 0.82F, u);
-                  Vector3f p = new Vector3f(c1).lerp(c2, u)
-                     .add(new Vector3f(this.axisRight).mul((float)Math.cos(twist) * rr))
-                     .add(new Vector3f(this.axisUp).mul((float)Math.sin(twist) * rr));
-                  pts.add(p);
-                  widths[i] = (0.045F + 0.055F * charge) * this.distScale * (0.6F + 0.4F * (float)Math.sin(Math.PI * u));
-                  alphas[i] = linkAlpha * (0.45F + 0.55F * charge);
-               }
-               float[] tint = k % 2 == 0 ? CYAN : VOID;
-               g.ribbon(pts, widths, alphas, tint[0], tint[1], tint[2]);
-            }
-            g.end();
-         }
+         // 2.5 层级 ②～⑥：双环间绚烂通透能量传导体系（2 层错色星云等离子流场壁 + 6 外 + 4 内螺旋流 + 12 脉冲彗星 + 递进压环 + 中轴芯 + 16 滑行流丝）
+         this.renderGateEnergyConduit(g, a, c1, c2, r1Now, r2, spin, charge, compress, firePulse, gateFade, near1, near2);
 
-         // 2.6 第三幕蓄能奇点光核 + 临界压缩十字星芒（20 ~ 36 tick）
+         // 2.6 层级 ⑦：第二环径向聚焦闭环（4 枚聚焦棱晶尖端径向束流 + 6 道内圈螺旋卷吸直注奇点核心）
+         this.renderRing2FocusBeams(g, a, c2, r2, rot2, crystalDist, crystalLen, charge, compress, firePulse, alpha2, near2);
+
+         // 2.7 第三幕蓄能奇点光核 + 临界压缩十字星芒（20 ~ 37 tick）
          if (a >= CHARGE_START && a < BEAM_FIRE + 4.0F) {
             float chargeIn = FxMath.window(a, CHARGE_START, BEAM_FIRE);
             float postFade = a < BEAM_FIRE ? 1.0F : 1.0F - FxMath.window(a, BEAM_FIRE, BEAM_FIRE + 4.0F);
             float coreAlpha = chargeIn * postFade * near2;
             if (coreAlpha > 0.01F) {
-               float coreR = this.ring2Radius * (0.20F + 0.24F * chargeIn) * (1.0F - 0.35F * compress);
+               float coreR = this.ring2Radius * (0.16F + 0.18F * chargeIn) * (1.0F - 0.36F * compress);
                g.geoCenter(c2);
-               g.begin(Style.CORONA, 3.6F + 4.8F * compress, 0.2F, 2.2F, 1.4F, 1.4F + 1.4F * compress, 0.5F + 0.5F * compress);
-               g.deformedSphere(c2, coreR, 14, 18, -a * 0.16F, 0.07F, 1.8F, a * 0.5F, CYAN[0], CYAN[1], CYAN[2], coreAlpha * 0.92F);
+               g.begin(Style.CORONA, 2.2F + 2.6F * compress, 0.2F, 2.4F, 1.4F, 1.4F + 1.2F * compress, 0.45F + 0.45F * compress);
+               g.deformedSphere(c2, coreR, 14, 18, -a * 0.16F, 0.07F, 1.8F, a * 0.5F, CYAN[0], CYAN[1], CYAN[2], coreAlpha * 0.85F);
                g.clearGeoCenter();
 
                // 29~33 tick 临界吸气瞬间：锐利十字星芒提示“即将开炮！”
                if (compress > 0.01F || firePulse > 0.01F) {
                   float flare = Math.max(compress, firePulse);
-                  float flareSize = this.ring2Radius * (0.45F + 0.65F * flare);
-                  g.begin(Style.GLOW, 8.5F, 0.2F, 6.5F, 2.8F, 1.8F, 0.0F);
+                  float flareSize = this.ring2Radius * (0.36F + 0.52F * flare);
+                  g.begin(Style.GLOW, 5.2F, 0.2F, 7.2F, 3.2F, 1.8F, 0.0F);
                   g.billboard(c2, flareSize, 0.0F, WHITE[0], WHITE[1], WHITE[2], flare * near2);
-                  g.billboard(c2, flareSize * 0.85F, 1.5707964F, CYAN[0], CYAN[1], CYAN[2], flare * 0.85F * near2);
+                  g.billboard(c2, flareSize * 0.82F, 1.5707964F, CYAN[0], CYAN[1], CYAN[2], flare * 0.82F * near2);
                   g.end();
                }
             }
          }
       }
+   }
+
+   /**
+    * 层级 ①：8 ~ 17 tick 先导点火引导束与推进点火环。
+    * 从第一环中心射出先导能量脉冲并同步前推撑开一圈冰青点火环，抵达第二环位置时引燃第二环展开。
+    */
+   private void renderGateIgnitionGuide(FxGeometry g, FxFrame frame, float a, Vector3f c1, float r1Now, float near1) {
+      if (a < 8.0F || a >= 17.5F) {
+         return;
+      }
+      float guideProg = FxMath.easeOutCubic(FxMath.window(a, 8.0F, 12.2F));
+      float guideFade = 1.0F - FxMath.easeInCubic(FxMath.window(a, 12.6F, 17.5F));
+      float alpha = guideProg * guideFade * near1;
+      if (alpha <= 0.01F) {
+         return;
+      }
+      Vec3 headWorld = this.ring1Center.lerp(this.ring2Center, guideProg);
+      Vector3f gEnd = frame.rel(headWorld);
+      float wBase = Math.max(0.14F, r1Now * 0.020F);
+
+      // 1.1 中轴先导主束（外紫光晕 + 内冰青前向湍流 Style.BEAM，严控亮度不炸白）
+      int segs = 10;
+      List<Vector3f> spine = new ArrayList<>(segs + 1);
+      float[] outerW = new float[segs + 1];
+      float[] innerW = new float[segs + 1];
+      float[] alphas = new float[segs + 1];
+      for (int i = 0; i <= segs; i++) {
+         float u = (float)i / segs;
+         spine.add(new Vector3f(c1).lerp(gEnd, u));
+         float env = 0.55F + 0.45F * (float)Math.sin(Math.PI * u);
+         outerW[i] = wBase * 1.55F * env;
+         innerW[i] = wBase * 0.80F * env;
+         alphas[i] = alpha * 0.88F;
+      }
+      g.begin(Style.RIBBON, 1.6F, 0.15F, 4.5F, 6.0F, 10.0F, 0.45F);
+      g.ribbon(spine, outerW, alphas, VOID[0], VOID[1], VOID[2]);
+      g.begin(Style.BEAM, 2.8F, 0.15F, 4.5F, 11.0F, 0.72F, 0.75F);
+      g.ribbon(spine, innerW, alphas, CYAN[0], CYAN[1], CYAN[2]);
+
+      // 1.2 三股紧绕先导束钻进的螺旋流丝（第一人称正对轴线也能一眼看清前冲轨迹）
+      g.begin(Style.RIBBON, 2.4F, 0.15F, 7.0F, 8.0F, 12.0F, 0.35F);
+      int helixSegs = 14;
+      float helixR = Math.max(0.45F, r1Now * 0.11F) * (0.45F + 0.55F * guideProg);
+      for (int k = 0; k < 3; k++) {
+         List<Vector3f> pts = new ArrayList<>(helixSegs + 1);
+         float[] ws = new float[helixSegs + 1];
+         float[] as = new float[helixSegs + 1];
+         float baseAng = a * 0.35F + k * (FxMath.TAU / 3.0F);
+         for (int i = 0; i <= helixSegs; i++) {
+            float u = (float)i / helixSegs;
+            float ang = baseAng + u * FxMath.TAU * 1.15F;
+            float rr = helixR * (float)Math.sin(Math.PI * u);
+            pts.add(new Vector3f(c1).lerp(gEnd, u)
+               .add(new Vector3f(this.axisRight).mul((float)Math.cos(ang) * rr))
+               .add(new Vector3f(this.axisUp).mul((float)Math.sin(ang) * rr)));
+            ws[i] = wBase * 0.46F * (0.35F + 0.65F * (float)Math.sin(Math.PI * u));
+            as[i] = alpha * 0.85F;
+         }
+         float[] tint = k == 0 ? GOLD : CYAN;
+         g.ribbon(pts, ws, as, tint[0], tint[1], tint[2]);
+      }
+
+      // 1.3 随前端同步前推并撑开的先导 3D 点火环（torus）+ 前端脉冲光弹
+      float ringR = FxMath.lerp(Math.max(0.5F, r1Now * 0.12F), this.ring2Radius * 0.46F, guideProg);
+      float tubeR = Math.max(0.06F, this.ring2Radius * 0.016F) * (0.6F + 0.4F * guideFade);
+      g.begin(Style.RIBBON, 2.8F, 0.15F, 6.5F, 8.0F, 10.0F, 0.40F);
+      g.torus(gEnd, this.axisForward, ringR, tubeR, 28, 5, a * 0.25F, CYAN[0], CYAN[1], CYAN[2], alpha * 0.88F);
+      g.begin(Style.GLOW, 3.8F, 0.15F, 6.5F, 2.8F, 1.1F, 0.0F);
+      g.billboard(gEnd, Math.max(0.45F, this.ring2Radius * 0.10F) * (0.7F + 0.3F * guideProg), a * 0.25F, CYAN[0], CYAN[1], CYAN[2], alpha * 0.90F);
+      g.end();
+   }
+
+   /**
+    * 层级 ②～⑥：双环间绚烂且通透的多层次能量传导通道。
+    * 严格控制 HDR 总能量预算（目标叠加亮度留在高饱和彩度区间，避免大面积白热去饱和与泛光糊白）：
+    * 2 层空间错色星云等离子流场壁（外深紫品红 + 内清透冰青）、6 外 + 4 内螺旋主输能流、
+    * 12 颗加速脉冲能量彗星、双层轻盈递进 3D 加速压环、纤锐中轴聚能芯与 16 条两段式螺旋滑行流丝。
+    */
+   private void renderGateEnergyConduit(
+      FxGeometry g, float a, Vector3f c1, Vector3f c2, float r1Now, float r2,
+      float spin, float charge, float compress, float firePulse, float gateFade, float near1, float near2
+   ) {
+      if (a < RING2_START + 1.0F) {
+         return;
+      }
+      float grow = FxMath.easeOutCubic(FxMath.window(a, RING2_START + 1.0F, RING2_END));
+      float nearPair = Math.min(near1, near2);
+      float linkAlpha = grow * gateFade * nearPair;
+      if (linkAlpha <= 0.01F) {
+         return;
+      }
+      // 绚烂流场壁与中轴芯在 33 tick 爆发瞬间过载一闪后于 11 tick 内退场，无缝交棒给第四幕主光柱
+      float activeFade = 1.0F - FxMath.easeInCubic(FxMath.window(a, BEAM_FIRE + 1.0F, BEAM_FIRE + 11.0F));
+      float activeAlpha = grow * activeFade * nearPair;
+      float pinch = 1.0F - 0.14F * compress;
+      Vector3f cEnd = new Vector3f(c1).lerp(c2, grow);
+      float flowPhase = conduitFlowPhase(a);
+      float[] tmpColor = new float[3];
+
+      // ── A. 双层空间错色星云等离子流场壁（外紫品红 + 内冰青，双面叠加总亮度严控在饱和彩度区，绝不烧白） ──
+      if (activeAlpha > 0.01F) {
+         float outR1 = r1Now * 0.90F * pinch;
+         float outR2 = FxMath.lerp(outR1, r2 * 0.87F * pinch, grow);
+         float inR1 = r1Now * 0.54F * pinch;
+         float inR2 = FxMath.lerp(inR1, r2 * 0.42F * pinch, grow);
+         float wave1 = flowPhase % 1.0F;
+         float wave2 = (flowPhase * 1.32F + 0.45F) % 1.0F;
+
+         // A1. 外炮膛星云等离子外壁：高饱和深紫 → 星辉品红（压低绿通道保持艳丽星云色，不与冰青等强混白）
+         float rCol = FxMath.lerp(0.60F, 0.95F, 0.25F + 0.55F * charge);
+         float gCol = FxMath.lerp(0.10F, 0.16F, charge);
+         float bCol = 1.0F;
+         float outEm = 0.62F + 0.36F * charge + 0.22F * compress + 0.48F * firePulse;
+         g.begin(Style.PLASMA_BEAM, outEm, 0.25F, 1.0F, -5.8F, 1.0F - activeFade, wave1);
+         g.cylinder(c1, cEnd, outR1, outR2, 28, spin * 1.15F, rCol, gCol, bCol, activeAlpha * (0.36F + 0.18F * charge));
+
+         // A2. 中内腔冰青极光流场壁：反旋高频流纹（覆盖第一人称黄金视角且保持正中完全透明，清澈见底）
+         float inEm = 0.46F + 0.32F * charge + 0.20F * compress + 0.40F * firePulse;
+         g.begin(Style.PLASMA_BEAM, inEm, 0.22F, 2.0F, -9.2F, 1.0F - activeFade, wave2);
+         g.cylinder(c1, cEnd, inR1, inR2, 24, -spin * 1.65F, 0.14F, 0.84F, 1.0F, activeAlpha * (0.26F + 0.16F * charge));
+         g.end();
+      }
+
+      // ── B. 6 道纤锐外螺旋主输能流（锚定卫星阵）+ 4 道内聚焦螺旋丝 + 12 颗精锐脉冲能量彗星 ──
+      float outerBaseW = Math.max(0.11F, r2 * 0.022F) * (0.78F + 0.34F * charge + 0.18F * firePulse);
+      float innerBaseW = outerBaseW * 0.62F;
+      float outerTwistSpan = -(1.05F + 1.55F * charge + 0.45F * compress);
+      float innerTwistSpan = -(1.55F + 2.05F * charge + 0.65F * compress);
+      int segs = 20;
+
+      // B1. 外螺旋 6 道主通道（合批绘制：低亮紫品红细晕 + 高饱和 Style.BEAM 冰青/璨金清晰主芯）
+      @SuppressWarnings("unchecked")
+      List<Vector3f>[] outerPaths = new List[6];
+      float[][] outerHaloW = new float[6][segs + 1];
+      float[][] outerCoreW = new float[6][segs + 1];
+      float[][] outerAlphas = new float[6][segs + 1];
+      for (int k = 0; k < 6; k++) {
+         float baseAng = spin + k * (FxMath.TAU / 6.0F);
+         List<Vector3f> pts = new ArrayList<>(segs + 1);
+         for (int i = 0; i <= segs; i++) {
+            float u = (float)i / segs * grow;
+            float twist = baseAng + u * outerTwistSpan;
+            float rr = FxMath.lerp(r1Now * 0.90F, r2 * 0.87F, u) * pinch;
+            pts.add(new Vector3f(c1).lerp(c2, u)
+               .add(new Vector3f(this.axisRight).mul((float)Math.cos(twist) * rr))
+               .add(new Vector3f(this.axisUp).mul((float)Math.sin(twist) * rr)));
+            float env = 0.55F + 0.45F * (float)Math.sin(Math.PI * ((float)i / segs));
+            outerHaloW[k][i] = outerBaseW * 1.75F * env;
+            outerCoreW[k][i] = outerBaseW * 0.85F * env;
+            outerAlphas[k][i] = linkAlpha * (0.55F + 0.35F * charge);
+         }
+         outerPaths[k] = pts;
+      }
+      g.begin(Style.RIBBON, 0.95F + 0.55F * charge + 0.60F * firePulse, 0.15F, 4.5F, 6.0F, 9.0F, 0.45F);
+      for (int k = 0; k < 6; k++) {
+         float[] haloCol = k % 2 == 0 ? VOID : MAGENTA;
+         g.ribbon(outerPaths[k], outerHaloW[k], outerAlphas[k], haloCol[0], haloCol[1], haloCol[2]);
+      }
+      g.begin(Style.BEAM, 1.75F + 1.05F * charge + 0.95F * firePulse, 0.15F, 4.5F, 11.5F, 0.70F, 0.72F);
+      for (int k = 0; k < 6; k++) {
+         float[] coreCol = k % 3 == 0 ? GOLD : CYAN;
+         g.ribbon(outerPaths[k], outerCoreW[k], outerAlphas[k], coreCol[0], coreCol[1], coreCol[2]);
+      }
+      g.end();
+
+      // B2. 内聚焦 4 道利落高速螺旋流（与第二环 4 方位呼应，留出充足视觉呼吸空间绝不粘连发白）
+      if (activeAlpha > 0.01F) {
+         g.begin(Style.RIBBON, 1.65F + 0.95F * charge + 0.85F * compress, 0.15F, 7.2F, 6.0F, 12.0F, 0.35F);
+         for (int k = 0; k < 4; k++) {
+            float baseAng = spin * 1.15F + (k + 0.5F) * (FxMath.TAU / 4.0F);
+            List<Vector3f> pts = new ArrayList<>(segs + 1);
+            float[] ws = new float[segs + 1];
+            float[] alphas = new float[segs + 1];
+            for (int i = 0; i <= segs; i++) {
+               float u = (float)i / segs * grow;
+               float twist = baseAng + u * innerTwistSpan;
+               float rr = FxMath.lerp(r1Now * 0.48F, r2 * 0.36F, u) * pinch;
+               pts.add(new Vector3f(c1).lerp(c2, u)
+                  .add(new Vector3f(this.axisRight).mul((float)Math.cos(twist) * rr))
+                  .add(new Vector3f(this.axisUp).mul((float)Math.sin(twist) * rr)));
+               float env = 0.50F + 0.50F * (float)Math.sin(Math.PI * ((float)i / segs));
+               ws[i] = innerBaseW * env;
+               alphas[i] = activeAlpha * (0.58F + 0.36F * charge);
+            }
+            float[] tint = k % 2 == 0 ? CYAN : GOLD;
+            g.ribbon(pts, ws, alphas, tint[0], tint[1], tint[2]);
+         }
+         g.end();
+
+         // B3. 沿外螺旋 6 道主通道疾驰的 12 颗精锐脉冲能量彗星（逐颗清晰可辨，色相 紫 → 青 → 金）
+         int pulseSegs = 8;
+         List<Vector3f> orbPositions = new ArrayList<>(12);
+         List<float[]> orbColors = new ArrayList<>(12);
+         List<Float> orbSizes = new ArrayList<>(12);
+         List<Float> orbAlphas = new ArrayList<>(12);
+
+         g.begin(Style.RIBBON, 2.6F + 1.3F * charge + 1.0F * compress, 0.12F, 6.5F, 4.0F, 8.0F, 0.35F);
+         float rStart = r1Now * 0.90F * pinch;
+         float rEnd = r2 * 0.87F * pinch;
+         float pWidth = outerBaseW * 1.08F;
+         for (int k = 0; k < 6; k++) {
+            float baseAng = spin + k * (FxMath.TAU / 6.0F);
+            for (int p = 0; p < 2; p++) {
+               float raw = (flowPhase * 1.15F + k * 0.17F + p * 0.50F) % 1.0F;
+               float head = raw * (0.58F + 0.42F * raw);
+               if (head > grow || head < 0.04F) {
+                  continue;
+               }
+               float tail = Math.max(0.0F, head - 0.22F);
+               float envAlpha = FxMath.envelope(head / Math.max(0.1F, grow), 0.10F, 0.86F) * activeAlpha;
+               if (envAlpha <= 0.01F) {
+                  continue;
+               }
+               if (head < 0.5F) {
+                  lerpColor(MAGENTA, CYAN, head * 2.0F, tmpColor);
+               } else {
+                  lerpColor(CYAN, GOLD, (head - 0.5F) * 2.0F, tmpColor);
+               }
+               List<Vector3f> pts = new ArrayList<>(pulseSegs + 1);
+               float[] ws = new float[pulseSegs + 1];
+               float[] as = new float[pulseSegs + 1];
+               for (int i = 0; i <= pulseSegs; i++) {
+                  float f = (float)i / pulseSegs;
+                  float u = FxMath.lerp(tail, head, f);
+                  float twist = baseAng + u * outerTwistSpan;
+                  float rr = FxMath.lerp(rStart, rEnd, u);
+                  pts.add(new Vector3f(c1).lerp(c2, u)
+                     .add(new Vector3f(this.axisRight).mul((float)Math.cos(twist) * rr))
+                     .add(new Vector3f(this.axisUp).mul((float)Math.sin(twist) * rr)));
+                  ws[i] = pWidth * (0.18F + 0.82F * f * f);
+                  as[i] = envAlpha * (0.12F + 0.88F * f);
+               }
+               g.ribbon(pts, ws, as, tmpColor[0], tmpColor[1], tmpColor[2]);
+
+               orbPositions.add(pts.get(pulseSegs));
+               orbColors.add(new float[]{tmpColor[0], tmpColor[1], tmpColor[2]});
+               orbSizes.add(Math.min(0.42F, pWidth * 1.55F));
+               orbAlphas.add(envAlpha * 0.92F);
+            }
+         }
+         g.end();
+
+         // 脉冲彗星前端精锐能量光弹（紧凑核心，清晰璀璨不晕白）
+         if (!orbPositions.isEmpty()) {
+            g.begin(Style.GLOW, 3.2F + 1.5F * charge, 0.12F, 7.0F, 3.0F, 0.65F, 0.0F);
+            for (int i = 0; i < orbPositions.size(); i++) {
+               float[] col = orbColors.get(i);
+               g.billboard(orbPositions.get(i), orbSizes.get(i), a * 0.2F + i, col[0], col[1], col[2], orbAlphas.get(i));
+            }
+            g.end();
+         }
+      }
+
+      // ── C. 轻盈锐利的双层递进收缩 3D 加速压环（外 3 道大压环 + 内 2 道聚焦环，紫 → 青 → 金前推） ──
+      if (activeAlpha > 0.01F) {
+         g.begin(Style.RIBBON, 1.65F + 1.05F * charge + 0.95F * compress, 0.18F, 7.0F, 8.0F, 12.0F, 0.35F);
+         for (int k = 0; k < 3; k++) {
+            float raw = (flowPhase + k / 3.0F) % 1.0F;
+            float u = raw * (0.62F + 0.38F * raw);
+            if (u > grow) {
+               continue;
+            }
+            float ringFade = FxMath.envelope(u / Math.max(0.1F, grow), 0.12F, 0.85F) * activeAlpha;
+            if (ringFade <= 0.01F) {
+               continue;
+            }
+            Vector3f pos = new Vector3f(c1).lerp(c2, u);
+            if (u < 0.55F) {
+               lerpColor(VOID, CYAN, u / 0.55F, tmpColor);
+            } else {
+               lerpColor(CYAN, GOLD, (u - 0.55F) / 0.45F, tmpColor);
+            }
+            float outRad = FxMath.lerp(r1Now * 0.86F, r2 * 0.82F, u) * pinch;
+            float outTube = Math.max(0.055F, r2 * 0.012F) * (0.75F + 0.40F * u);
+            g.torus(pos, this.axisForward, outRad, outTube, 30, 5, spin * 1.2F + u * 2.5F + k, tmpColor[0], tmpColor[1], tmpColor[2], ringFade * 0.88F);
+         }
+         for (int k = 0; k < 2; k++) {
+            float raw = (flowPhase * 1.18F + k * 0.50F + 0.18F) % 1.0F;
+            float u = raw * (0.62F + 0.38F * raw);
+            if (u > grow) {
+               continue;
+            }
+            float ringFade = FxMath.envelope(u / Math.max(0.1F, grow), 0.12F, 0.85F) * activeAlpha;
+            if (ringFade <= 0.01F) {
+               continue;
+            }
+            Vector3f pos = new Vector3f(c1).lerp(c2, u);
+            lerpColor(CYAN, GOLD, u, tmpColor);
+            float inRad = FxMath.lerp(r1Now * 0.46F, r2 * 0.24F, u) * pinch;
+            float inTube = Math.max(0.045F, r2 * 0.009F) * (0.70F + 0.45F * u);
+            g.torus(pos, this.axisForward, inRad, inTube, 24, 5, -spin * 1.8F - u * 3.2F + k, tmpColor[0], tmpColor[1], tmpColor[2], ringFade * 0.90F);
+         }
+         g.end();
+      }
+
+      // ── D. 纤锐中轴引导聚能芯（c1 → c2：单层冰青轴芯 + 金青双细螺旋，临界期骤缩增亮无缝引爆主光柱） ──
+      if (activeAlpha > 0.01F) {
+         float shrinkCore = 1.0F - 0.45F * compress;
+         float axisR1 = Math.max(0.09F, r1Now * 0.014F) * shrinkCore;
+         float axisR2 = Math.max(0.16F, r2 * 0.028F) * shrinkCore;
+         float curR2 = FxMath.lerp(axisR1, axisR2, grow);
+         float axisEm = 1.75F + 1.45F * charge + 1.85F * compress + 2.2F * firePulse;
+
+         g.begin(Style.PLASMA_BEAM, axisEm, 0.2F, 1.0F, -11.5F, 1.0F - activeFade, (flowPhase * 1.6F) % 1.0F);
+         g.cylinder(c1, cEnd, axisR1, curR2, 14, spin * 2.2F, CYAN[0], CYAN[1], CYAN[2], activeAlpha * (0.58F + 0.34F * charge));
+
+         g.begin(Style.RIBBON, 2.0F + 1.2F * charge + 1.2F * compress, 0.12F, 7.5F, 8.0F, 14.0F, 0.35F);
+         int coreSegs = 18;
+         float coreSwirl = flowPhase * 5.2F;
+         for (int s = 0; s < 2; s++) {
+            List<Vector3f> pts = new ArrayList<>(coreSegs + 1);
+            float[] ws = new float[coreSegs + 1];
+            float[] as = new float[coreSegs + 1];
+            float sign = s == 0 ? 1.0F : -1.0F;
+            for (int i = 0; i <= coreSegs; i++) {
+               float u = (float)i / coreSegs * grow;
+               float ang = sign * (u * FxMath.TAU * 2.2F - coreSwirl) + s * 3.14159F;
+               float rr = FxMath.lerp(axisR1 * 2.2F, curR2 * 2.0F, u) * (1.0F + 0.35F * (1.0F - compress));
+               pts.add(new Vector3f(c1).lerp(c2, u)
+                  .add(new Vector3f(this.axisRight).mul((float)Math.cos(ang) * rr))
+                  .add(new Vector3f(this.axisUp).mul((float)Math.sin(ang) * rr)));
+               ws[i] = Math.max(0.045F, curR2 * 0.28F) * (0.45F + 0.55F * (float)Math.sin(Math.PI * ((float)i / coreSegs)));
+               as[i] = activeAlpha * (0.62F + 0.30F * charge);
+            }
+            float[] tint = s == 0 ? GOLD : CYAN;
+            g.ribbon(pts, ws, as, tint[0], tint[1], tint[2]);
+         }
+         g.end();
+      }
+
+      // ── E. 16 条参数化连续螺旋滑行能量流丝（两段式：沿漏斗加速滑向第二环 → 抵达第二环后再折入中央奇点核 c2） ──
+      if (activeAlpha > 0.01F && a >= RING2_START + 3.0F) {
+         float streamFade = FxMath.easeOutCubic(FxMath.window(a, RING2_START + 3.0F, RING2_END + 1.0F)) * activeAlpha;
+         int streamCount = 16;
+         int sSegs = 8;
+         float maxS = grow >= 0.99F ? 1.0F : grow * 0.72F;
+         g.begin(Style.RIBBON, 2.1F + 1.25F * charge + 1.0F * compress, 0.12F, 7.0F, 6.0F, 10.0F, 0.35F);
+         for (int m = 0; m < streamCount; m++) {
+            float seed = m * 0.6180339F + this.seedFloat * 0.07F;
+            float speedMul = 0.85F + 0.55F * ((m % 5) / 4.0F);
+            float phase = (flowPhase * speedMul + seed) % 1.0F;
+            float head = phase * (0.55F + 0.45F * phase);
+            if (head > maxS || head < 0.04F) {
+               continue;
+            }
+            float tail = Math.max(0.0F, head - 0.19F);
+            float env = FxMath.envelope(head / Math.max(0.1F, maxS), 0.08F, 0.90F) * streamFade;
+            if (env <= 0.01F) {
+               continue;
+            }
+            float startFrac = 0.32F + 0.64F * (((m * 5) % streamCount) / (float)streamCount);
+            float rStart = r1Now * startFrac * pinch;
+            float rMid = r2 * (0.28F + 0.56F * startFrac) * pinch;
+            float ang0 = (m * FxMath.TAU / streamCount) + spin * 0.9F;
+            float swirl = -(1.4F + 1.8F * charge + 0.5F * (m % 3));
+
+            if (head < 0.45F) {
+               lerpColor(m % 2 == 0 ? VOID : MAGENTA, CYAN, head / 0.45F, tmpColor);
+            } else {
+               lerpColor(CYAN, m % 3 == 0 ? GOLD : WHITE, (head - 0.45F) / 0.55F, tmpColor);
+            }
+            List<Vector3f> pts = new ArrayList<>(sSegs + 1);
+            float[] ws = new float[sSegs + 1];
+            float[] as = new float[sSegs + 1];
+            float wMax = Math.max(0.055F, r2 * 0.011F) * (0.85F + 0.30F * charge);
+            for (int i = 0; i <= sSegs; i++) {
+               float f = (float)i / sSegs;
+               float s = FxMath.lerp(tail, head, f);
+               float axialU;
+               float rr;
+               if (s <= 0.72F) {
+                  float k = s / 0.72F;
+                  axialU = k;
+                  rr = FxMath.lerp(rStart, rMid, k);
+               } else {
+                  float k = (s - 0.72F) / 0.28F;
+                  axialU = 1.0F;
+                  rr = FxMath.lerp(rMid, r2 * 0.05F, FxMath.easeInCubic(k));
+               }
+               float ang = ang0 + s * swirl;
+               pts.add(new Vector3f(c1).lerp(c2, axialU)
+                  .add(new Vector3f(this.axisRight).mul((float)Math.cos(ang) * rr))
+                  .add(new Vector3f(this.axisUp).mul((float)Math.sin(ang) * rr)));
+               ws[i] = wMax * (0.15F + 0.85F * f);
+               as[i] = env * (0.12F + 0.88F * f);
+            }
+            g.ribbon(pts, ws, as, tmpColor[0], tmpColor[1], tmpColor[2]);
+         }
+         g.end();
+      }
+   }
+
+   /**
+    * 层级 ⑦：第二环径向聚焦闭环（17 ~ 37 tick）。
+    * 补齐“第二环 4 枚 3D 聚焦棱晶 & 内圈 → 中央奇点光核 c2”的最后一段能量汇流，使蓄能因果 100% 闭环且线条清晰通透。
+    */
+   private void renderRing2FocusBeams(
+      FxGeometry g, float a, Vector3f c2, float r2, float rot2, float crystalDist, float crystalLen,
+      float charge, float compress, float firePulse, float alpha2, float near2
+   ) {
+      if (a < RING2_START + 6.0F || a >= BEAM_FIRE + 4.5F) {
+         return;
+      }
+      float focusIn = FxMath.easeOutCubic(FxMath.window(a, RING2_START + 6.0F, CHARGE_START + 3.0F));
+      float focusOut = a < BEAM_FIRE ? 1.0F : 1.0F - FxMath.window(a, BEAM_FIRE, BEAM_FIRE + 4.5F);
+      float fAlpha = focusIn * focusOut * alpha2;
+      if (fAlpha <= 0.01F) {
+         return;
+      }
+
+      // 7.1 四枚 3D 聚焦棱晶内尖端 → 中央奇点核 c2 的 4 道利落聚焦光束（高饱和金/冰青，不糊白）
+      float beamW = Math.max(0.085F, r2 * 0.018F) * (0.75F + 0.35F * charge) * (1.0F - 0.30F * compress);
+      float beamEm = 2.2F + 1.4F * charge + 1.5F * compress + 1.8F * firePulse;
+      int segs = 10;
+      List<Vector3f> tipPositions = new ArrayList<>(4);
+      g.begin(Style.BEAM, beamEm, 0.12F, 4.8F, 14.0F, 0.65F, 0.78F);
+      for (int i = 0; i < 4; i++) {
+         float ang = rot2 * 0.85F + i * 1.5707964F;
+         Vector3f radial = new Vector3f(this.axisRight).mul((float)Math.cos(ang))
+            .add(new Vector3f(this.axisUp).mul((float)Math.sin(ang))).normalize();
+         Vector3f tip = new Vector3f(c2).add(new Vector3f(radial).mul(Math.max(0.2F, crystalDist - crystalLen * 0.88F)));
+         Vector3f end = new Vector3f(tip).lerp(c2, focusIn);
+         tipPositions.add(tip);
+
+         List<Vector3f> pts = new ArrayList<>(segs + 1);
+         float[] ws = new float[segs + 1];
+         float[] as = new float[segs + 1];
+         for (int j = 0; j <= segs; j++) {
+            float u = (float)j / segs;
+            pts.add(new Vector3f(tip).lerp(end, u));
+            ws[j] = beamW * (0.55F + 0.45F * (float)Math.sin(Math.PI * u));
+            as[j] = fAlpha * 0.90F;
+         }
+         float[] tint = i % 2 == 0 ? GOLD : CYAN;
+         g.ribbon(pts, ws, as, tint[0], tint[1], tint[2]);
+      }
+
+      // 棱晶内尖端紧凑放电亮点
+      g.begin(Style.GLOW, 3.0F + 1.6F * charge + 1.2F * compress, 0.12F, 6.8F, 3.0F, 0.85F, 0.0F);
+      for (int i = 0; i < 4; i++) {
+         float[] tint = i % 2 == 0 ? GOLD : CYAN;
+         g.billboard(tipPositions.get(i), Math.min(0.45F, Math.max(0.24F, r2 * 0.055F)) * (0.80F + 0.35F * charge), a * 0.3F + i, tint[0], tint[1], tint[2], fAlpha * 0.90F * near2);
+      }
+
+      // 7.2 第二环内缘 → 中央奇点核 c2 的 6 道对数螺旋向心卷吸流丝
+      g.begin(Style.RIBBON, 1.65F + 1.15F * charge + 1.0F * compress, 0.12F, 7.2F, 8.0F, 14.0F, 0.35F);
+      int armSegs = 14;
+      float outerR = r2 * 0.84F;
+      float innerR = Math.max(0.25F, r2 * 0.12F * (1.0F - 0.35F * compress));
+      float ln = (float)Math.log(Math.max(1.25F, outerR / innerR));
+      for (int arm = 0; arm < 6; arm++) {
+         float theta0 = rot2 * 1.25F + arm * (FxMath.TAU / 6.0F);
+         List<Vector3f> pts = new ArrayList<>(armSegs + 1);
+         float[] ws = new float[armSegs + 1];
+         float[] as = new float[armSegs + 1];
+         for (int j = 0; j <= armSegs; j++) {
+            float u = (float)j / armSegs * focusIn;
+            float rr = outerR * (float)Math.exp(-u * ln);
+            float theta = theta0 - u * FxMath.TAU * (0.38F + 0.25F * charge);
+            pts.add(new Vector3f(c2)
+               .add(new Vector3f(this.axisRight).mul((float)Math.cos(theta) * rr))
+               .add(new Vector3f(this.axisUp).mul((float)Math.sin(theta) * rr)));
+            ws[j] = Math.max(0.05F, r2 * 0.010F) * (1.0F - 0.55F * u) * (0.80F + 0.35F * charge);
+            as[j] = fAlpha * (float)Math.sin(Math.PI * ((float)j / armSegs)) * 0.82F;
+         }
+         float[] tint = arm % 3 == 0 ? GOLD : (arm % 2 == 0 ? CYAN : MAGENTA);
+         g.ribbon(pts, ws, as, tint[0], tint[1], tint[2]);
+      }
+      g.end();
+   }
+
+   private static void lerpColor(float[] a, float[] b, float t, float[] out) {
+      float k = FxMath.clamp01(t);
+      out[0] = FxMath.lerp(a[0], b[0], k);
+      out[1] = FxMath.lerp(a[1], b[1], k);
+      out[2] = FxMath.lerp(a[2], b[2], k);
    }
 
    // ═════════════════════════════ 第四幕：突发光束贯通 ═════════════════════════════
@@ -1688,7 +2212,7 @@ public final class SpatialFractureFx extends FxInstance {
          Vec3 tail = p.subtract(spark.vx * 2.8, spark.vy * 2.8, spark.vz * 2.8);
          float life = (float)spark.life / spark.maxLife;
          Vector3f rel = frame.rel(p);
-         g.streak(rel, frame.rel(tail), 0.055F * Math.min(1.4F, this.scale), spark.color[0], spark.color[1], spark.color[2], life * nearFade(rel));
+         g.streak(rel, frame.rel(tail), 0.055F * spark.widthScale * Math.min(1.4F, this.scale), spark.color[0], spark.color[1], spark.color[2], life * nearFade(rel));
       }
       g.end();
    }
@@ -2156,8 +2680,13 @@ public final class SpatialFractureFx extends FxInstance {
       final float[] color;
       final float accelY;
       final double drag;
+      final float widthScale;
 
       Spark(Vec3 origin, Vector3f velocity, int life, float[] color, float accelY, double drag) {
+         this(origin, velocity, life, color, accelY, drag, 1.0F);
+      }
+
+      Spark(Vec3 origin, Vector3f velocity, int life, float[] color, float accelY, double drag, float widthScale) {
          this.x = this.px = origin.x;
          this.y = this.py = origin.y;
          this.z = this.pz = origin.z;
@@ -2169,6 +2698,7 @@ public final class SpatialFractureFx extends FxInstance {
          this.color = color;
          this.accelY = accelY;
          this.drag = drag;
+         this.widthScale = widthScale;
       }
 
       static Spark burst(Vec3 origin, RandomSource random, float speed, int life, float[] color, float accelY) {
