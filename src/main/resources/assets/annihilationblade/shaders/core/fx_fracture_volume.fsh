@@ -70,24 +70,33 @@ void main() {
         }
     }
 
-    // 核心闪光（裂界与湮灭瞬间）
+    // 核心闪光（裂界与湮灭瞬间：锐利亮芯 + 深紫青星云外晕，避免大面积洗白）
     if (Extra.x > 0.0 && tc > 0.0 && tc - radius * 0.2 < sceneT) {
-        acc += vec3(1.0, 0.92, 1.0) * exp(-pow(dRay / (radius * 0.22), 2.0)) * Extra.x * 3.0;
+        float sharpCore = exp(-pow(dRay / max(radius * 0.16, 0.25), 2.0));
+        float chromaHalo = exp(-pow(dRay / max(radius * 0.38, 0.5), 2.0));
+        acc += (vec3(1.0, 0.94, 1.0) * sharpCore * 2.4 + vec3(0.58, 0.36, 1.0) * chromaHalo * 0.85) * Extra.x;
     }
 
-    // 黑洞吸积环与外晕
+    // 黑洞光子环、吸积环与外晕
     float coreR = Shock.w;
     if (coreR > 0.0 && tc > 0.0 && tc - coreR < sceneT) {
-        float ring = exp(-abs(dRay - coreR * 1.35) / (coreR * 0.18));
-        acc += vec3(0.78, 0.5, 0.9) * ring * 2.5;
-        acc += vec3(0.6, 0.3, 1.0) * exp(-max(dRay - coreR, 0.0) / (coreR * 1.5)) * step(coreR, dRay) * 0.6;
+        float photonRing = exp(-abs(dRay - coreR * 1.12) / max(coreR * 0.08, 0.04));
+        float ring = exp(-abs(dRay - coreR * 1.42) / max(coreR * 0.22, 0.08));
+        acc += vec3(1.0, 0.88, 0.65) * photonRing * 2.4;
+        acc += vec3(0.76, 0.44, 1.0) * ring * 2.2;
+        acc += vec3(0.36, 0.72, 1.0) * exp(-max(dRay - coreR, 0.0) / max(coreR * 1.65, 0.2)) * step(coreR, dRay) * 0.65;
     }
 
-    // 冲击波光边
+    // 双波段绚烂空间冲击波壳（前沿星金冷白激波 + 尾随虚空紫青星云余波）
     if (Shock.y > 0.0 && tc > 0.0) {
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dRay * dRay, 0.0));
         if (frontT < sceneT) {
-            acc += vec3(1.0, 0.85, 0.6) * exp(-pow((dRay - Shock.x) / max(Shock.z, 0.1), 2.0)) * Shock.y * 1.6;
+            float wave1 = exp(-pow((dRay - Shock.x) / max(Shock.z, 0.1), 2.0));
+            float wave2 = exp(-pow((dRay - Shock.x * 0.84) / max(Shock.z * 1.45, 0.15), 2.0));
+            float turb = 0.72 + 0.28 * fxNoise3(rd * 11.0 + vec3(FxTime * 1.8, -FxTime * 1.3, seed));
+            vec3 leadCol = mix(vec3(1.0, 0.84, 0.48), vec3(0.95, 0.98, 1.0), wave1 * 0.65);
+            vec3 trailCol = mix(vec3(0.64, 0.26, 1.0), vec3(0.32, 0.88, 1.0), turb);
+            acc += (leadCol * wave1 * 1.85 + trailCol * wave2 * 1.15 * turb) * Shock.y;
         }
     }
 

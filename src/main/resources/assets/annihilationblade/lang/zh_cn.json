@@ -43,7 +43,7 @@
   "jei.annihilationblade.blade_desc.loli_blade": "萝莉之刃继承氪金萝莉的高压（互相秒杀）权限：主手直接命中合法目标时执行服务端强制处决；48 格扇形处决改为原生挥刀 SE，128 格范围处决改为原生 SA 并播放成功音效，不再接管左键空挥或潜行右键。持有者默认获得伤害拦截、死亡回满、饱食、飞行与虚空保护。所有效果均限制在 Minecraft 服务器逻辑内，不包含蓝屏、崩端或系统级操作。",
 
   "slash_art.annihilationblade.spatial_fracture": "§5§l空间破碎§8·§d万象裂隙",
-  "slash_art.annihilationblade.spatial_fracture.desc": "§7自施法者射出§5§l虚空贯穿光柱§r§7并在落点展开§d地面/竖直双重法阵§7，于域内§b切碎空间、悬停刀痕§7并触发§c全屏斩切爆轰§7与§6终焉处决§7。§8范围、目标上限、扫描步长与视觉倍率可配置。§r",
+  "slash_art.annihilationblade.spatial_fracture.desc": "§7于施法者前方依次展开§d双层竖直魔导法阵§7并对旋蓄能，突射§5§l虚空贯穿光柱§r§7轰击落点；命中后铺开§b空间碎裂斩切领域§7、凝聚§5奇点黑洞§7，最终引爆§6绚烂超新星全屏齐斩爆轰§7与终焉处决。§8范围、目标上限、扫描步长与视觉倍率可配置。§r",
   "slash_art.annihilationblade.nightfall_judgement_cut": "§5§l夜陨次元斩§8·§d黯星轮舞",
   "slash_art.annihilationblade.nightfall_judgement_cut.desc": "§7以持刀者为中心扫描§d20 格§7内合法目标，在目标脚下或随机补位点§d每 5 tick§7生成 1 个次元斩，总计§d20 个§7后停止。§r",
   "slash_art.annihilationblade.scale_guard": "§6§l鳞之卫§8·§5魔龙剑环",

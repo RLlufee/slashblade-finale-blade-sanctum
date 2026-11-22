@@ -45,14 +45,16 @@ void main() {
     bool centerAhead = cw > 0.0 && tc > 0.0;
     vec2 offset = vec2(0.0);
 
-    // 冲击波：沿球壳轮廓的径向折射
+    // 冲击波：沿球壳轮廓的强力径向空间弯折与棱镜色边
+    float shockRim = 0.0;
     if (Shock.y > 0.0 && centerAhead) {
         float ring = exp(-pow((dRay - Shock.x) / max(Shock.z, 0.1), 2.0));
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dRay * dRay, 0.0));
         vec2 dir = uv - cuv;
         float len = length(dir);
         if (frontT < sceneT && len > 1.0e-4) {
-            offset += dir / len * ring * Shock.y * 0.035;
+            offset += dir / len * ring * Shock.y * 0.048;
+            shockRim = ring * Shock.y;
         }
     }
 
@@ -107,8 +109,15 @@ void main() {
         shardColor *= 1.0 + (fxHash13(cell + 5.0) - 0.5) * (0.28 + 0.24 * cut) * fieldMask;
         shardColor = mix(shardColor, clamp((shardColor - 0.5) * (1.12 + 0.14 * cut) + 0.5, 0.0, 2.5), cut * 0.45 * fieldMask * (1.0 - isVoid));
         shardColor *= 1.0 - crack * 0.85 * fieldMask;
-        vec3 bevelCol = mix(vec3(0.72, 0.48, 1.0), vec3(0.85, 0.96, 1.0), hEdge.z);
+        vec3 bevelCol = mix(vec3(0.72, 0.44, 1.0), vec3(0.55, 0.96, 1.0), hEdge.z);
+        bevelCol = mix(bevelCol, vec3(1.0, 0.84, 0.45), smoothstep(0.70, 0.92, hEdge.x) * clamp(cut, 0.0, 1.0));
         color = shardColor + bevelCol * bevel * (1.0 - crack * 0.65) * fieldMask;
+    }
+
+    // 冲击波球壳前沿的棱镜色边高光
+    if (shockRim > 0.01) {
+        vec3 rimTint = mix(vec3(0.45, 0.88, 1.0), vec3(1.0, 0.80, 0.42), clamp(shockRim, 0.0, 1.0));
+        color += rimTint * shockRim * 0.28;
     }
 
     // 事件视界：纯黑核心与外围暗晕
