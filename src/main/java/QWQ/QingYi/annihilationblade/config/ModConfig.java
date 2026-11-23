@@ -313,28 +313,26 @@ public final class ModConfig {
    public static final class PhantomJudgement extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
       public final BooleanEntry enabled;
       public final DoubleEntry range;
-      public final IntegerEntry searchTicks;
       public final IntegerEntry swordCount;
-      public final IntegerEntry rainSwordsPerTarget;
-      public final IntegerEntry fallingSwordDelayTicks;
-      public final IntegerEntry lingerTicks;
+      public final IntegerEntry subShardsPerMaster;
+      public final IntegerEntry trackerShardsPerSub;
+      public final IntegerEntry maxTotalShards;
+      public final IntegerEntry slashStringsPerTarget;
       public final IntegerEntry maxTargets;
-      public final IntegerEntry maxLingeringSwords;
       public final IntegerEntry cooldownTicks;
       public final DoubleEntry visualScale;
 
       private PhantomJudgement() {
          super("annihilation_blade.phantom_judgement", "config.annihilationblade.annihilation_blade.phantom_judgement.title");
          this.enabled = seEnabled("phantom_judgement");
-         this.range = doubleValue("range", 40.0, 8.0, 96.0, "幻影审判搜索范围，建议 24-56。", "Phantom Judgement search range. Suggested: 24-56.");
-         this.searchTicks = intValue("search_ticks", 20, 4, 80, "锁定阶段持续 tick，建议 12-30。", "Target lock phase duration in ticks. Suggested: 12-30.");
-         this.swordCount = intValue("search_sword_count", 8, 1, 24, "锁定阶段环绕剑数量，建议 6-12。", "Orbiting search sword count. Suggested: 6-12.");
-         this.rainSwordsPerTarget = intValue("rain_swords_per_target", 6, 1, 16, "每个目标落剑数量，建议 4-8。", "Falling swords per target. Suggested: 4-8.");
-         this.fallingSwordDelayTicks = intValue("falling_sword_delay_ticks", 24, 0, 80, "落剑命中延迟 tick，建议 18-30。", "Falling sword impact delay in ticks. Suggested: 18-30.");
-         this.lingerTicks = intValue("linger_ticks", 60, 0, 200, "落剑残留 tick，建议 30-80。", "Lingering sword duration in ticks. Suggested: 30-80.");
-         this.maxTargets = intValue("max_targets", 24, 1, 96, "幻影审判最多目标数，建议 12-36。", "Maximum Phantom Judgement targets. Suggested: 12-36.");
-         this.maxLingeringSwords = intValue("max_lingering_swords", 96, 0, 256, "同一玩家最多残留剑数量，建议 48-128。", "Maximum lingering swords per player. Suggested: 48-128.");
-         this.cooldownTicks = intValue("cooldown_ticks", 44, 0, 200, "触发冷却 tick，建议 34-80。", "Trigger cooldown in ticks. Suggested: 34-80.");
+         this.range = doubleValue("range", 40.0, 8.0, 96.0, "幻影审判·千刃星流索敌范围，建议 24-56。", "Phantom Judgement search range. Suggested: 24-56.");
+         this.swordCount = intValue("search_sword_count", 8, 4, 16, "千刃解离初始母刃数量，建议 6-12。", "Initial master shard blade count. Suggested: 6-12.");
+         this.subShardsPerMaster = intValue("sub_shards_per_master", 4, 0, 6, "每枚母刃分裂出的寒星子刃数量，建议 3-4。", "Sub-shards split from each master blade. Suggested: 3-4.");
+         this.trackerShardsPerSub = intValue("tracker_shards_per_sub", 2, 0, 4, "每枚子刃分裂出的紫罗兰追踪碎刃数量，建议 1-3。", "Tracker shards split from each sub-shard. Suggested: 1-3.");
+         this.maxTotalShards = intValue("max_total_shards", 128, 24, 200, "单次千刃星流同屏碎刃总数硬上限，建议 96-144。", "Hard cap of simultaneous shards per cast. Suggested: 96-144.");
+         this.slashStringsPerTarget = intValue("slash_strings_per_target", 10, 4, 16, "单目标终幕爆裂斩绝线基础数量，建议 8-12。", "Base slash-string count per target on detonation. Suggested: 8-12.");
+         this.maxTargets = intValue("max_targets", 24, 1, 96, "幻影审判最多锁定目标数，建议 12-36。", "Maximum Phantom Judgement targets. Suggested: 12-36.");
+         this.cooldownTicks = intValue("cooldown_ticks", 60, 0, 240, "触发冷却 tick（20 tick=1秒），建议 56-90。", "Trigger cooldown in ticks (20 ticks = 1s). Suggested: 56-90.");
          this.visualScale = visualScale(1.0);
       }
    }

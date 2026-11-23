@@ -90,4 +90,11 @@ for this mod. Its design was informed by the following projects:
       shards (Yamato SpaceBroken) applied conceptually in SpatialFractureFx and
       fx_fracture_scene.fsh. No code or shaders were copied.
 
+  * StellarDecay (LGPL-3.0)
+      Visual and gameplay-choreography concept reference only for multi-tier splitting
+      shard formations, organic curved pursuit, orbiting blade cages, intersecting slash
+      strings, and returning shard streams (Thousand Blade / KillFishShard / BrokenSpiritBlade),
+      reimagined independently via the dedicated FX renderer in PhantomJudgementFx and
+      Style.CRYSTAL_SHARD. No code, models, or textures were copied.
+
 Thank you to these authors.

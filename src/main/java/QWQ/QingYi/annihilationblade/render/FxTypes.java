@@ -56,10 +56,10 @@ public final class FxTypes {
    public static final int STARLESS_JUDGEMENT = 16;
    // 编号 17 原为 ABYSSAL_DECREE（归墟天诏），已移除，按末尾追加规则留空不复用。
    /**
-    * 湮灭之刃 SE「幻影审判·九剑星轨」（持续特效：搜索期 START，降剑 UPDATE，随后 STOP）。
-    * origin = 剑阵中心，radius = 搜索范围，scale = 视觉倍率，seed 低 32 位 = 刀色，
-    * intParam 见 {@code AnnihilationFxEvents.packPhantom}，entityIds = 锁定 / 审判的目标。
-    * 剑阵几何与服务端共用 {@code PhantomJudgementPattern}。
+    * 湮灭之刃 SE「幻影审判·千刃星流」（持续特效：解离启阵 START，齐爆斩绝 UPDATE，随后 STOP）。
+    * origin = 施法者中心，direction = 视线朝向，radius = 搜索范围，scale = 视觉倍率，
+    * seed 高 32 位为共享随机种子 / 低 24 位为刀色，intParam 打包千刃集群与阶段类型（见 {@code AnnihilationFxEvents.packPhantom}），
+    * entityIds = 锁定 / 最终处决的目标。时间轴与曲线数学与服务端共用 {@code PhantomJudgementPattern}。
     */
    public static final int PHANTOM_JUDGEMENT = 18;
    /**

@@ -35,13 +35,11 @@
   "item.annihilationblade.infinity_stellaris.tooltip.stat.durability": "耐久",
   "item.annihilationblade.infinity_stellaris.tooltip.authority": "§3飛行 / 鎖血免死 / 擊殺兜底 / 夜視高亮 / 熵增蝕解 / 弦切連鎖 / 原生SE宇宙弦切 / 曲率撕裂 / 伽馬霆爆 / 絕對湮滅圈",
   "item.annihilationblade.infinity_stellaris.tooltip.no_recipe": "§8終焉儀式武器，不可透過常規配方合成。",
-
   "jei.annihilationblade.blade_desc.annihilation_blade": "湮滅之刃是一把以終焉處決、裂界連鎖和大規模視覺演出為核心的命名刀。空間破碎負責打開戰場，斷空、裂界、迴響、權域、因果、星寂與幻影七個 SE 負責把敵群逐層拖入終局。適合需要範圍壓制、連續清場和強烈回饋的戰鬥場景。",
   "jei.annihilationblade.blade_desc.blood_prison": "魔刀·血獄是一把以生命風險、血色領域與幻影追獵為核心的命名刀。煉獄·殺戮負責展開領域並穿梭斬殺，嗜血提供續航，源流·靈盾兜住瀕危窗口，幻影·印記把連續命中轉化為爆發。它比湮滅之刃更偏向高壓近身循環。",
   "jei.annihilationblade.blade_desc.infinity_stellaris": "無盡星空現在可透過終焉級儀式合成：四枚湮滅核心、一枚龍蛋、兩座信標、一枚下界之星，以及一把殺敵 5000、耀魂 25000、精煉 50 的魔刀·血獄。持有者獲得飛行、無敵、死亡兜底與永晝視界；命中觸發熵增蝕解、5 tick 粒子鎖鏈和自訂彩色伽馬霆爆。宇宙弦切透過 SlashBlade 原生 SE 斬擊觸發；曲率撕裂預設關閉，可按 I 切換，開啟時只凍結符合 SlashBlade PVP/友傷配置的合法目標，停止手持後恢復 AI。SA 會在目視落點展開 128×128 絕對湮滅圈，入圈合法目標直接死亡且無掉落。",
   "jei.annihilationblade.blade_desc.nightfall_dragon": "魔龍夜隕是一把三形態混沌魔龍命名刀，按 Z 在【封印·淬血】、【覺醒·龍魂復甦】與【終焉·神隕夜隕】間循環。封印形態擁有夜隕次元斬 SA，會在 20 格內合法目標腳下或隨機補位點每 5 tick 逐個生成次元斬，總計 20 個；背包內存在終焉形態即可獲得神體生存兜底與飛行。手持終焉形態仍保持 slashblade:none SA，繼承不重複的魔血寄生與龍威重域，並追加創世神體、虛空湮滅、滅世幻影劍陣與撕裂蒼穹。低階伴生劍陣由終焉滅世龍刃和貫穿刀波上位替代，第三態視覺粒子每維度每 tick 上限 500 個。",
   "jei.annihilationblade.blade_desc.loli_blade": "蘿莉之刃繼承氪金蘿莉的高壓權限：主手直接命中合法目標時執行伺服器強制處決；48 格扇形處決改為原生揮刀 SE，128 格範圍處決改為原生 SA 並播放成功音效，不再接管左鍵空揮或潛行右鍵。持有者預設獲得傷害攔截、死亡回滿、飽食、飛行與虛空保護。所有效果均限制在 Minecraft 伺服器邏輯內，不包含藍屏、崩端或系統級操作。",
-
   "slash_art.annihilationblade.spatial_fracture": "§5§l空間破碎§8·§d萬象裂隙",
   "slash_art.annihilationblade.spatial_fracture.desc": "於施法者前方依序展開雙層豎直魔導法陣並對旋蓄能，突射虛空貫穿光柱轟擊落點；命中後鋪開空間碎裂斬切領域、凝聚奇點黑洞，最終引爆絢爛超新星全螢幕齊斬爆轟與終焉處決。範圍、目標上限、掃描步長與視覺倍率可設定。",
   "slash_art.annihilationblade.nightfall_judgement_cut": "§5§l夜隕次元斬§8·§d黯星輪舞",
@@ -56,7 +54,6 @@
   "slash_art.annihilationblade.vacuum_decay_collapse.desc": "以目視方塊或視線前方為中心展開絕對湮滅圈，形成 128×128 正方領域並持續 5 秒；進入其中的合法目標直接熱寂處決且不掉落物，方塊不會被破壞。",
   "slash_art.annihilationblade.loli_area_execution": "§d§l蘿莉終判§8·§5全域肅清",
   "slash_art.annihilationblade.loli_area_execution.desc": "§7透過§dSlashBlade 原生 SA§7釋放蘿莉刀全域處決，掃描持刀者周圍§d128 格§7內合法目標並執行伺服器處決，同時播放§d蘿莉成功§7音效；不再接管潛行右鍵。§r",
-
   "se.annihilationblade.loli_facing_execution": "§d§l蘿莉裁斷§8·§5扇形處決",
   "se.annihilationblade.loli_facing_execution.desc": "§7透過§dSlashBlade 原生揮刀 SE§7觸發，沿視線§d48 格§7扇形掃描合法目標並執行伺服器處決；不再接管左鍵空揮輸入。§r",
   "se.annihilationblade.dankong": "§d§l斷空§8·§5瞬獄終閃",
@@ -71,8 +68,8 @@
   "se.annihilationblade.causality_collapse.desc": "從首個命中目標開始坍縮因果，尋找附近最近敵對單位，生成錨點與橋接斬線後連鎖處決。鏈半徑、連鎖目標數、冷卻與視覺倍率可設定。",
   "se.annihilationblade.starless_judgement": "§6§l星寂裁決§8·§e斷天終判",
   "se.annihilationblade.starless_judgement.desc": "向前方釋放寬幅星寂裁決波，以投影判定掃過路徑目標並執行斷天終判。射程、寬度、目標上限、冷卻與視覺倍率可設定。",
-  "se.annihilationblade.phantom_judgement": "§d§l幻影審判§8·§5九劍星軌",
-  "se.annihilationblade.phantom_judgement.desc": "先召出環繞幻影劍鎖定敵群，再降下密集劍雨集中審判，適合清理分散目標。搜尋時間、環繞劍數量、落劍數量、殘留時間、目標上限與視覺倍率可設定。",
+  "se.annihilationblade.phantom_judgement": "§d§l幻影審判§8·§5千刃星流",
+  "se.annihilationblade.phantom_judgement.desc": "揮刀將刀意解離為黑曜稜晶母刃，飛襲途中三階裂變為寒星子刃與紫羅蘭追蹤碎刃如游魚群包抄敵群；抵達後結成三傾角萬刃星牢驟縮蓄壓，同步引爆漫天立體斬絕線與空間碎切處決，終幕百刃倒流重聚歸鞘。母刃數、子刃/追蹤刃分裂數、同屏上限、斬絕線數、冷卻與視覺倍率可設定。",
   "se.annihilationblade.blood_leech": "§4§l嗜血·噬血",
   "se.annihilationblade.blood_leech.desc": "魔刀·血獄的核心被動。命中敵對目標時以生命值為代價與籌碼，在高壓近戰中換取吸血續航；吸血與傷害核心邏輯固定。",
   "se.annihilationblade.spirit_shield": "§c§l源流·靈盾",
@@ -103,15 +100,12 @@
   "se.annihilationblade.myriad_dragon_blade_storm.desc": "終焉形態揮刀召出二十柄暗金與星空紫滅世龍刃，追獵 96 格內合法目標。",
   "se.annihilationblade.world_cleaving_slash": "§5§l滅界龍威§8·§6撕裂蒼穹",
   "se.annihilationblade.world_cleaving_slash.desc": "終焉形態普通揮刀追加 72 格撕裂型虛空劍氣，拉扯合法敵人至斬痕中心，短暫封印攻擊並造成壓倒性魔法傷害，同時最多落下 16 道紫色伽馬同源實體閃電。",
-
   "subtitle.annihilationblade.loli_success": "蘿莉刀釋放成功",
-
   "key.categories.annihilationblade": "湮滅之刃",
   "key.annihilationblade.toggle_dankong_blink": "切換斷空閃現模式",
   "key.annihilationblade.toggle_infinity_ai_erasure": "切換無盡星空 AI 刪除",
   "key.annihilationblade.toggle_infinity_ai_restore": "切換無盡星空 AI 復原",
   "key.annihilationblade.switch_nightfall_dragon_mode": "切換夜隕龍形態",
-
   "message.annihilationblade.dankong_blink_toggle": "§d切換斷空閃現模式§8：§7目前閃現：%s",
   "message.annihilationblade.dankong_blink.on": "§a開",
   "message.annihilationblade.dankong_blink.off": "§c關",
@@ -125,12 +119,10 @@
   "message.annihilationblade.nightfall_dragon.mode.awakened": "§6覺醒·龍魂復甦",
   "message.annihilationblade.nightfall_dragon.mode.final": "§6終焉·神隕夜隕",
   "message.annihilationblade.loli_blade.kick": "Ciallo～(∠・ω< )⌒☆  你被蘿莉一腳踢飛啦！！！",
-
   "enchantment.level.10": "「§6极限级§r」",
   "enchantment.level.15": "「§e神威级§r」",
   "enchantment.level.100": "「§6終焉級§r」",
   "enchantment.level.255": "「§6神明級§r」",
-
   "config.annihilationblade.title": "湮滅之刃配置",
   "config.annihilationblade.common.title": "通用 / 服务器配置",
   "config.annihilationblade.client.title": "客户端配置",
@@ -157,7 +149,7 @@
   "config.annihilationblade.annihilation_blade.void_dominion.title": "虚无权域",
   "config.annihilationblade.annihilation_blade.causality_collapse.title": "因果坍缩",
   "config.annihilationblade.annihilation_blade.starless_judgement.title": "星寂裁决",
-  "config.annihilationblade.annihilation_blade.phantom_judgement.title": "幻影审判",
+  "config.annihilationblade.annihilation_blade.phantom_judgement.title": "幻影審判",
   "config.annihilationblade.blood_prison.domain.title": "血狱领域",
   "config.annihilationblade.blood_prison.phantom_burst.title": "血狱幻影爆发",
   "config.annihilationblade.infinity_stellaris.title": "无尽星空",
@@ -226,12 +218,11 @@
   "config.annihilationblade.echo_interval_ticks": "回響間隔（tick）",
   "config.annihilationblade.max_active_sequences": "最大並存序列數",
   "config.annihilationblade.max_targets_per_wave": "每波最大目標數",
-  "config.annihilationblade.search_ticks": "搜尋持續時間（tick）",
-  "config.annihilationblade.search_sword_count": "搜尋幻影劍數",
-  "config.annihilationblade.rain_swords_per_target": "每目標落劍數",
-  "config.annihilationblade.falling_sword_delay_ticks": "落劍延遲（tick）",
-  "config.annihilationblade.linger_ticks": "殘留持續時間（tick）",
-  "config.annihilationblade.max_lingering_swords": "最大殘留劍數",
+  "config.annihilationblade.search_sword_count": "解離母刃數量",
+  "config.annihilationblade.sub_shards_per_master": "每母刃分裂子刃數",
+  "config.annihilationblade.tracker_shards_per_sub": "每子刃分裂追蹤碎刃數",
+  "config.annihilationblade.max_total_shards": "同屏碎刃總數上限",
+  "config.annihilationblade.slash_strings_per_target": "單目標斬絕線基礎數",
   "config.annihilationblade.strike_interval_ticks": "裁決間隔（tick）",
   "config.annihilationblade.chain_radius": "因果鏈半徑",
   "config.annihilationblade.max_chain": "最大鏈長度",
@@ -279,5 +270,5 @@
   "config.annihilationblade.annihilation_blade.void_dominion.enabled.tooltip": "是否啟用「虛無權域·萬象湮滅」SE。預設開啟。",
   "config.annihilationblade.annihilation_blade.causality_collapse.enabled.tooltip": "是否啟用「因果坍縮·連鎖抹消」SE。預設開啟。",
   "config.annihilationblade.annihilation_blade.starless_judgement.enabled.tooltip": "是否啟用「星寂裁決·斷天終判」SE。預設開啟。",
-  "config.annihilationblade.annihilation_blade.phantom_judgement.enabled.tooltip": "是否啟用「幻影審判·九劍星軌」SE。預設開啟。"
+  "config.annihilationblade.annihilation_blade.phantom_judgement.enabled.tooltip": "是否啟用「幻影審判·千刃星流」SE。預設開啟。"
 }

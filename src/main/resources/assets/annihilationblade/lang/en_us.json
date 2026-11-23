@@ -35,13 +35,11 @@
   "item.annihilationblade.infinity_stellaris.tooltip.stat.durability": "Durability",
   "item.annihilationblade.infinity_stellaris.tooltip.authority": "§3Flight / invulnerability / kill fallback / fullbright / entropy / particle chain / native-SE string cut / curvature / gamma thunderburst / annihilation zone",
   "item.annihilationblade.infinity_stellaris.tooltip.no_recipe": "§8Final ritual recipe; not built for balance.",
-
   "jei.annihilationblade.blade_desc.annihilation_blade": "Annihilation Blade is a named blade built around terminus execution, rift chaining, and large-scale visual impact. Spatial Fracture opens the battlefield, while Severed Space, World Rift, Terminus Echo, Void Dominion, Causality Collapse, Starless Judgement, and Phantom Judgement pull enemy groups layer by layer into the end. It favors area suppression, chained clearing, and strong combat feedback.",
   "jei.annihilationblade.blade_desc.blood_prison": "Demonic Blade: Blood Prison is a named blade built around health risk, a blood-red domain, and phantom pursuit. Infernal Slaughter opens the domain and blinks through targets, Blood Leech sustains the wielder, Spirit Shield protects the danger window, and Phantom Mark converts repeated hits into burst damage. Compared with Annihilation Blade, it leans harder into close-range pressure.",
   "jei.annihilationblade.blade_desc.infinity_stellaris": "Infinity Stellaris is a craftable final weapon with a deliberately extreme ritual recipe: four Annihilation Cores, a Dragon Egg, two Beacons, one Nether Star, and a Blood Prison with 5000 kills, 25000 Proud Souls, and 50 refine. Its wielder receives flight, invulnerability, death fallback, and gamma fullbright. Hits trigger entropy dissolution, a 5-tick particle chain, and custom colored Gamma Thunderburst. Cosmic String Cut triggers through SlashBlade's native SE slash flow; Curvature Rupture is disabled by default, can be toggled with I, only freezes legal targets that pass SlashBlade PVP/friendly-fire rules, and restores AI after Infinity Stellaris is no longer held. Its SA creates a 128x128 Absolute Annihilation Zone at the aimed point, killing legal targets inside with no drops.",
   "jei.annihilationblade.blade_desc.nightfall_dragon": "Nightfall Dragon is a three-form demonic-dragon named blade. Z cycles Sealed, Awakened, and Final. Sealed form has Nightfall Judgement Cut: it scans legal targets within 20 blocks and spawns one Judgement Cut every 5 ticks at target feet or random fallback points until 20 cuts appear. Awakened form has Scale Guard: 16 upright phantom blades orbit, expand, pause, rise, and slam down, dealing touch damage during flight and 500% blade panel damage plus 10% max-health damage on impact with camera shake. Final form in inventory grants god-body survival and flight; held final form keeps slash_art as slashblade:none, inherits non-duplicate Demonic Blood and Dragon Pressure traits, and adds Creation God Body, Domain of Absolute Annihilation, Myriad Dragon Blade Storm, and World-Cleaving Slash. Lower companion-sword patterns are replaced by the final blade storm and piercing blade wave, with final-form visual particles capped at 500 per level tick.",
   "jei.annihilationblade.blade_desc.loli_blade": "Loli Blade inherits the high-pressure authority of the original Loli Pickaxe: direct main-hand hits execute legal targets on the server; the 48-block cone execution is now a native slash SE, while the 128-block area execution is now a native SA with a success sound. It no longer intercepts left-click empty or sneaking right-click. Holders receive damage interception, full-health recovery, saturation, flight, and void protection by default. All effects stay inside Minecraft server logic and exclude blue screens, client crashes, forced client exits, and system-level operations.",
-
   "slash_art.annihilationblade.spatial_fracture": "§5§lSpatial Fracture§8 · §dRift of All Things",
   "slash_art.annihilationblade.spatial_fracture.desc": "Unfolds dual vertical arcane seals sequentially in front of the caster, spins them to charge, and fires a piercing void beam at the aimed anchor; on impact, it shatters space with 3D cuts, collapses into a singularity, and detonates in a dazzling supernova screen-cleaving blast with terminus judgement. Range, target cap, scan step, and visual scale are configurable.",
   "slash_art.annihilationblade.nightfall_judgement_cut": "§5§lNightfall Judgement Cut§8 · §dDark Star Wheel",
@@ -56,7 +54,6 @@
   "slash_art.annihilationblade.vacuum_decay_collapse.desc": "Anchors on the aimed block or forward sightline, forms a 128x128 square annihilation zone for 5 seconds, and heat-death executes legal targets inside with no drops. Blocks are not destroyed.",
   "slash_art.annihilationblade.loli_area_execution": "§d§lLoli Final Judgement§8 · §5Total Purge",
   "slash_art.annihilationblade.loli_area_execution.desc": "§7Recasts the Loli Blade area execution as a §dSlashBlade-native SA§7: scans legal targets within §d128 blocks§7, executes them on the server, and plays the §dLoli success§7 sound. It no longer intercepts sneaking right-click.§r",
-
   "se.annihilationblade.loli_facing_execution": "§d§lLoli Verdict§8 · §5Cone Execution",
   "se.annihilationblade.loli_facing_execution.desc": "§7Triggers from a §dSlashBlade-native slash SE§7, scanning a §d48-block§7 forward cone for legal targets and executing them on the server. It no longer intercepts left-click empty input.§r",
   "se.annihilationblade.dankong": "§d§lSevered Space§8 · §5Blink Requiem",
@@ -71,8 +68,8 @@
   "se.annihilationblade.causality_collapse.desc": "Collapses causality from the first struck target, searches the nearest hostile targets, then creates anchors and slash bridges before chain execution. Chain radius, chain cap, cooldown, and visual scale are configurable.",
   "se.annihilationblade.starless_judgement": "§6§lStarless Judgement§8 · §eHeaven-Cleaving Verdict",
   "se.annihilationblade.starless_judgement.desc": "Projects a wide starless judgement wave forward, checks targets along its projected path, and delivers the heaven-cleaving verdict. Range, width, target cap, cooldown, and visual scale are configurable.",
-  "se.annihilationblade.phantom_judgement": "§d§lPhantom Judgement§8 · §5Ninefold Star Trail",
-  "se.annihilationblade.phantom_judgement.desc": "Summons orbiting phantom blades to lock scattered targets, then calls down dense sword rain for focused judgement. Search duration, orbiting sword count, falling sword count, lingering time, target cap, and visual scale are configurable.",
+  "se.annihilationblade.phantom_judgement": "§d§lPhantom Judgement§8 · §5Thousand-Shard Stream",
+  "se.annihilationblade.phantom_judgement.desc": "Shatters blade intent into obsidian-prism master shards that split mid-flight into frost-cyan sub-shards and violet tracker shards, schooling along organic curves to trap targets in a tri-tilted blade cage before detonating into crisscrossing 3D slash strings and screen-slicing execution, then recalling all shards back to the blade. Master/sub/tracker shard counts, total shard cap, slash-string density, cooldown, and visual scale are configurable.",
   "se.annihilationblade.blood_leech": "§4§lBlood Leech",
   "se.annihilationblade.blood_leech.desc": "A core Blood Prison passive. Hostile hits turn the wielder's health into both risk and leverage, trading high-pressure melee for lifesteal sustain. Lifesteal and damage logic are fixed.",
   "se.annihilationblade.spirit_shield": "§c§lSpirit Shield",
@@ -103,15 +100,12 @@
   "se.annihilationblade.myriad_dragon_blade_storm.desc": "Final slashes summon twenty dark-gold and star-violet dragon blades that hunt legal targets up to 96 blocks away.",
   "se.annihilationblade.world_cleaving_slash": "§5§lWorld-Cleaving Slash§8 · §6Sky-Rending Dragon Might",
   "se.annihilationblade.world_cleaving_slash.desc": "Final normal slashes add a 72-block wide void blade wave that pulls legal enemies into the scar, suppresses attacks, delivers overwhelming magic damage, and calls up to 16 purple Gamma thunderbolts.",
-
   "subtitle.annihilationblade.loli_success": "Loli Blade released successfully",
-
   "key.categories.annihilationblade": "Annihilation Blade",
   "key.annihilationblade.toggle_dankong_blink": "Toggle Severed Space Blink",
   "key.annihilationblade.toggle_infinity_ai_erasure": "Toggle Infinity AI Erasure",
   "key.annihilationblade.toggle_infinity_ai_restore": "Toggle Infinity AI Restore",
   "key.annihilationblade.switch_nightfall_dragon_mode": "Switch Nightfall Dragon Form",
-
   "message.annihilationblade.dankong_blink_toggle": "§dSevered Space blink mode§8: §7Blink: %s",
   "message.annihilationblade.dankong_blink.on": "§aON",
   "message.annihilationblade.dankong_blink.off": "§cOFF",
@@ -125,12 +119,10 @@
   "message.annihilationblade.nightfall_dragon.mode.awakened": "§6Awakened · Dragon Soul Revival",
   "message.annihilationblade.nightfall_dragon.mode.final": "§6Final · Godfall Nightfall",
   "message.annihilationblade.loli_blade.kick": "Ciallo～(∠・ω< )⌒☆  You were kicked flying by a loli!!!",
-
   "enchantment.level.10": "\"§6Limit Level§r\"",
   "enchantment.level.15": "\"§eDivine Level§r\"",
   "enchantment.level.100": "「§6Terminus-Rank§r」",
   "enchantment.level.255": "「§6Deity-Rank§r」",
-
   "config.annihilationblade.title": "Annihilation Blade Configuration",
   "config.annihilationblade.common.title": "Common / Server Configuration",
   "config.annihilationblade.client.title": "Client Configuration",
@@ -226,12 +218,11 @@
   "config.annihilationblade.echo_interval_ticks": "Echo Interval (ticks)",
   "config.annihilationblade.max_active_sequences": "Maximum Active Sequences",
   "config.annihilationblade.max_targets_per_wave": "Maximum Targets per Wave",
-  "config.annihilationblade.search_ticks": "Search Duration (ticks)",
-  "config.annihilationblade.search_sword_count": "Search Sword Count",
-  "config.annihilationblade.rain_swords_per_target": "Rain Swords per Target",
-  "config.annihilationblade.falling_sword_delay_ticks": "Falling Sword Delay (ticks)",
-  "config.annihilationblade.linger_ticks": "Linger Duration (ticks)",
-  "config.annihilationblade.max_lingering_swords": "Maximum Lingering Swords",
+  "config.annihilationblade.search_sword_count": "Master Shard Count",
+  "config.annihilationblade.sub_shards_per_master": "Sub-Shards per Master",
+  "config.annihilationblade.tracker_shards_per_sub": "Tracker Shards per Sub",
+  "config.annihilationblade.max_total_shards": "Maximum Simultaneous Shards",
+  "config.annihilationblade.slash_strings_per_target": "Base Slash Strings per Target",
   "config.annihilationblade.strike_interval_ticks": "Strike Interval (ticks)",
   "config.annihilationblade.chain_radius": "Chain Radius",
   "config.annihilationblade.max_chain": "Maximum Chain",
@@ -279,5 +270,5 @@
   "config.annihilationblade.annihilation_blade.void_dominion.enabled.tooltip": "Whether to enable the 'Void Dominion: All-Things Obliteration' SE. Enabled by default.",
   "config.annihilationblade.annihilation_blade.causality_collapse.enabled.tooltip": "Whether to enable the 'Causality Collapse: Chain Erasure' SE. Enabled by default.",
   "config.annihilationblade.annihilation_blade.starless_judgement.enabled.tooltip": "Whether to enable the 'Starless Judgement: Sky-Severing Decree' SE. Enabled by default.",
-  "config.annihilationblade.annihilation_blade.phantom_judgement.enabled.tooltip": "Whether to enable the 'Phantom Judgement: Nine-Blade Astral Orbit' SE. Enabled by default."
+  "config.annihilationblade.annihilation_blade.phantom_judgement.enabled.tooltip": "Whether to enable the 'Phantom Judgement: Thousand-Shard Stream' SE. Enabled by default."
 }

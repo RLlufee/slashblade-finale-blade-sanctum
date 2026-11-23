@@ -3,7 +3,7 @@
 #moj_import <annihilationblade:fx_common.glsl>
 
 // 网格特效统一着色器：
-// 支持 16 种程序化 + 流场贴图驱动着色风格，兼容 HDR 加法发光层（FxBlendMode = 0）
+// 支持 17 种程序化 + 流场贴图驱动着色风格，兼容 HDR 加法发光层（FxBlendMode = 0）
 // 与预乘 Alpha 实体/暗部衬底层（FxBlendMode = 1）。
 uniform sampler2D Sampler0; // 场景原始深度（R32F）
 uniform sampler2D Sampler1; // 256x256 无缝四通道流场噪声贴图（R=fBm云雾, G=Worley脊线, BA=旋度偏移）
@@ -729,6 +729,67 @@ vec4 styleVoidSlit(vec2 uv) {
     return vec4(col * endFade, clamp(alpha * endFade, 0.0, 1.0));
 }
 
+// 16. 3D 棱晶碎刃（配合 bladeShard / shard）：
+// 利用平面切面法线计算黑曜石/水晶折面反光 + 锋利外刃轮廓 + 立体中脊寒芒 + 流动虚空晶脉。
+// Body 模式输出深邃玄黑紫晶实体（绝不发白，白天晴空高反差）；HDR 模式输出冷冽晶棱与过载锋芒。
+// params: x = 菲涅尔锐度, y = 晶脉流动速度, z = 蓄压过载强度(0..1), w = 溶解/重铸进度(0..1)
+vec4 styleCrystalShard(vec2 uv) {
+    vec3 normal = gFaceNormal;
+    vec3 viewDir = normalize(-relativePos);
+    float ndv = clamp(abs(dot(normal, viewDir)), 0.0, 1.0);
+    float rimPower = max(FxParams.x, 1.2);
+    float flowSpeed = FxParams.y;
+    float overload = clamp(FxParams.z, 0.0, 1.0);
+    float dissolve = clamp(FxParams.w, 0.0, 1.0);
+
+    // 溶解 / 重铸烧蚀掩码（沿晶脉脊线逐片析出或重凝）
+    vec2 veinUv = fract(vec2(uv.x * 1.4 - FxTime * flowSpeed * 0.45, uv.y * 1.8 + FxTime * flowSpeed * 0.20));
+    vec4 flowSample = texture(Sampler1, veinUv);
+    float veinMask = smoothstep(0.56, 0.92, flowSample.g);
+    float alive = 1.0;
+    float burn = 0.0;
+    if (dissolve > 0.001) {
+        float metric = flowSample.r * 0.65 + (0.5 - uv.x * 0.35);
+        alive = smoothstep(dissolve - 0.04, dissolve + 0.04, metric);
+        if (alive <= 0.001) {
+            return vec4(0.0);
+        }
+        burn = (1.0 - smoothstep(dissolve, dissolve + 0.16, metric)) * alive;
+    }
+
+    // 刃面结构特征：外刃轮廓（|uv.x| + |uv.y| == 1）、中脊线（uv.y == 0）、剑尖聚光（uv.x -> 1）
+    float borderMetric = abs(uv.x) + abs(uv.y);
+    float outerEdge = smoothstep(0.76, 0.995, borderMetric);
+    float fineEdge = smoothstep(0.90, 1.0, borderMetric);
+    float spine = exp(-abs(uv.y) * 10.5) * (1.0 - abs(uv.x) * 0.30);
+    float tipFocus = smoothstep(0.28, 1.0, uv.x);
+
+    // 钻石式双方向硬切面高光：使八面体 8 个三角面在旋转中交替闪现冷光
+    vec3 keyDir = normalize(vec3(0.45, 0.82, 0.35));
+    float keyLight = clamp(abs(dot(normal, keyDir)), 0.0, 1.0);
+    float facet = 0.30 + 0.70 * pow(keyLight, 1.6);
+    float rim = pow(1.0 - ndv, rimPower);
+    float hardRim = pow(1.0 - ndv, rimPower * 2.1);
+
+    if (FxBlendMode > 0.5) {
+        // Body 实体晶核：深邃黑曜紫底 + 切面微弱冷色反光 + 极细暗紫晶脉，彻底压住高光防止白天发白
+        vec3 baseDark = vertexColor.rgb * (0.20 + facet * 0.38);
+        vec3 rimTint = mix(vertexColor.rgb, vec3(0.78, 0.86, 1.0), 0.35);
+        vec3 col = baseDark + rimTint * (outerEdge * 0.24 + veinMask * (0.14 + 0.28 * overload));
+        float outA = clamp((0.88 + outerEdge * 0.10 + rim * 0.08) * alive, 0.0, 0.98);
+        return vec4(col, outA);
+    }
+
+    // HDR 晶棱发光层：高饱和刃色 + 切面冷光 + 锋刃亮边 + 蓄压过载白热脉动
+    float pulse = 1.0 + overload * (0.45 + 0.35 * sin(FxTime * 22.0 + uv.x * 6.0));
+    float bodyGlow = (0.14 + facet * 0.32 + rim * 0.65) * pulse;
+    float edgeGlow = (outerEdge * 0.88 + spine * 0.42 + tipFocus * 0.48 + veinMask * (0.35 + 0.75 * overload)) * pulse;
+    float whiteHot = clamp(fineEdge * 0.65 + hardRim * 0.55 + tipFocus * fineEdge * 0.60 + overload * 0.38 + burn * 1.4, 0.0, 1.5);
+    vec3 col = vertexColor.rgb * (bodyGlow + edgeGlow) + mix(vertexColor.rgb, vec3(1.0, 0.97, 1.0), 0.80) * whiteHot;
+    float alpha = clamp((bodyGlow + edgeGlow + whiteHot * 0.5) * alive, 0.0, 1.0);
+    return vec4(col * alive, alpha);
+}
+
 void main() {
     gFaceNormal = normalize(cross(dFdx(relativePos), dFdy(relativePos)) + vec3(0.0, 1.0e-7, 0.0));
     gRadialWidth = fwidth(length(texCoord0));
@@ -768,8 +829,10 @@ void main() {
         res = styleCorona(texCoord0);
     } else if (FxStyle < 14.5) {
         res = styleAfterimage(texCoord0);
-    } else {
+    } else if (FxStyle < 15.5) {
         res = styleVoidSlit(texCoord0);
+    } else {
+        res = styleCrystalShard(texCoord0);
     }
 
     if (FxBlendMode > 0.5) {

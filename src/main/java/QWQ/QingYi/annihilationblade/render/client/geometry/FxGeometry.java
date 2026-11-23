@@ -60,7 +60,9 @@ public final class FxGeometry {
       /** 全息残影（rawQuad 逐面绘制模型），params: x=棱边线宽倍率, y=面内填充, z=扫描线密度, w=溶解进度(0..1)。 */
       AFTERIMAGE(14),
       /** 虚空裂口（quad，uv.x 横跨 / uv.y 沿裂口），params: x=张开度, y=边缘撕裂强度, z=变体(0 眼形伤口 / 1 直刃裂缝), w=内部细节。 */
-      VOID_SLIT(15);
+      VOID_SLIT(15),
+      /** 3D 棱晶碎刃（bladeShard / shard），params: x=菲涅尔锐度, y=晶脉流动速度, z=蓄压过载强度(0..1), w=溶解/重铸进度(0..1)。 */
+      CRYSTAL_SHARD(16);
 
       final float id;
 
@@ -520,6 +522,55 @@ public final class FxGeometry {
       this.vertex(p3x, p3y, p3z, r, g, b, a, 0.0F, -1.0F);
       this.vertex(p0.x, p0.y, p0.z, r, g, b, a, 1.0F, 0.0F);
       this.vertex(bot.x, bot.y, bot.z, r, g, b, a, 0.0F, 0.0F);
+   }
+
+   /**
+    * 3D 非对称棱晶碎刃八面体（前锋修长尖锐、后尾利落收尖，4 个非退化 Quad 严格闭合为 8 个刃面）。
+    * <p>
+    * UV 约定：uv.x 沿剑身 -1（尾尖）→ 0（刃腹）→ +1（剑尖），uv.y 沿刃宽 0（刀脊）→ ±1（左右锋刃），
+    * 在整条外刃轮廓线上恒满足 {@code |uv.x| + |uv.y| == 1}，便于配合 {@link Style#CRYSTAL_SHARD} 精准勾勒晶面与锋芒。
+    */
+   public void bladeShard(
+      Vector3f center, Vector3f forward, Vector3f right, Vector3f up,
+      float frontLen, float backLen, float halfWidth, float halfThick,
+      float r, float g, float b, float a
+   ) {
+      if (this.builder == null || a <= 0.0F || (frontLen <= 0.0F && backLen <= 0.0F)) {
+         return;
+      }
+      // 6 个核心顶点：前锋尖、后尾尖、右翼刃、左翼刃、上脊、下脊
+      Vector3f tip = this.tmpA.set(center).fma(frontLen, forward);
+      Vector3f tail = this.tmpB.set(center).fma(-backLen, forward);
+      Vector3f wingR = this.tmpC.set(center).fma(halfWidth, right);
+      Vector3f wingL = this.tmpD.set(center).fma(-halfWidth, right);
+      Vector3f ridgeT = this.tmpE.set(center).fma(halfThick, up);
+      float bx = center.x - up.x * halfThick;
+      float by = center.y - up.y * halfThick;
+      float bz = center.z - up.z * halfThick;
+
+      // 1. 右上双刃面（对角线 ridgeT-wingR 切分前右上与后右上两个完整三角面）
+      this.vertex(ridgeT.x, ridgeT.y, ridgeT.z, r, g, b, a, 0.0F, 0.0F);
+      this.vertex(tip.x, tip.y, tip.z, r, g, b, a, 1.0F, 0.0F);
+      this.vertex(wingR.x, wingR.y, wingR.z, r, g, b, a, 0.0F, 1.0F);
+      this.vertex(tail.x, tail.y, tail.z, r, g, b, a, -1.0F, 0.0F);
+
+      // 2. 左上双刃面（对角线 ridgeT-wingL）
+      this.vertex(ridgeT.x, ridgeT.y, ridgeT.z, r, g, b, a, 0.0F, 0.0F);
+      this.vertex(tail.x, tail.y, tail.z, r, g, b, a, -1.0F, 0.0F);
+      this.vertex(wingL.x, wingL.y, wingL.z, r, g, b, a, 0.0F, -1.0F);
+      this.vertex(tip.x, tip.y, tip.z, r, g, b, a, 1.0F, 0.0F);
+
+      // 3. 右下双刃面（对角线 ridgeB-wingR）
+      this.vertex(bx, by, bz, r, g, b, a, 0.0F, 0.0F);
+      this.vertex(tail.x, tail.y, tail.z, r, g, b, a, -1.0F, 0.0F);
+      this.vertex(wingR.x, wingR.y, wingR.z, r, g, b, a, 0.0F, 1.0F);
+      this.vertex(tip.x, tip.y, tip.z, r, g, b, a, 1.0F, 0.0F);
+
+      // 4. 左下双刃面（对角线 ridgeB-wingL）
+      this.vertex(bx, by, bz, r, g, b, a, 0.0F, 0.0F);
+      this.vertex(tip.x, tip.y, tip.z, r, g, b, a, 1.0F, 0.0F);
+      this.vertex(wingL.x, wingL.y, wingL.z, r, g, b, a, 0.0F, -1.0F);
+      this.vertex(tail.x, tail.y, tail.z, r, g, b, a, -1.0F, 0.0F);
    }
 
    /**

@@ -121,37 +121,67 @@ public final class AnnihilationFxEvents {
       ));
    }
 
-   /** 幻影审判事件种类：搜索期（环绕剑阵 + 锁定）。 */
-   public static final int PHANTOM_SEARCH = 0;
-   /** 幻影审判事件种类：降下剑雨。 */
-   public static final int PHANTOM_RAIN = 1;
+   /** 幻影审判事件种类：千刃解离启阵（START）。 */
+   public static final int PHANTOM_START = 0;
+   /** 幻影审判事件种类：千刃碎破齐爆斩绝（UPDATE，在处决目标前发送）。 */
+   public static final int PHANTOM_DETONATE = 1;
 
-   /** 幻影审判：intParam = 环绕剑数 | 每目标落剑数 << 5 | 种类 << 10 | 搜索 tick << 12 | 残留 tick/2 << 19。 */
+   /**
+    * 幻影审判参数位打包：
+    * bits 0..4 = 母刃数(4..16) | bits 5..7 = 每母刃子刃数(0..6) | bits 8..10 = 每子刃追踪刃数(0..4)
+    * | bits 11..18 = 总碎刃硬上限(24..200) | bits 19..23 = 单目标斩绝线数(4..16) | bits 24..25 = 事件种类。
+    */
    public static int packPhantom(int kind) {
       ModConfig.PhantomJudgement config = ModConfig.COMMON.annihilationBlade.phantomJudgement;
-      int swords = Math.min(31, config.swordCount.getValue());
-      int rain = Math.min(31, config.rainSwordsPerTarget.getValue());
-      int search = Math.min(127, config.searchTicks.getValue());
-      int linger = Math.min(127, config.lingerTicks.getValue() / 2);
-      return swords | (rain << 5) | ((kind & 0x3) << 10) | (search << 12) | (linger << 19);
+      int masters = Math.max(1, Math.min(31, config.swordCount.getValue()));
+      int subs = Math.max(0, Math.min(7, config.subShardsPerMaster.getValue()));
+      int trackers = Math.max(0, Math.min(7, config.trackerShardsPerSub.getValue()));
+      int maxTotal = Math.max(24, Math.min(255, config.maxTotalShards.getValue()));
+      int strings = Math.max(4, Math.min(31, config.slashStringsPerTarget.getValue()));
+      return masters | (subs << 5) | (trackers << 8) | (maxTotal << 11) | (strings << 19) | ((kind & 0x3) << 24);
    }
 
-   /** 颜色放在 seed 低 32 位，高位为随机数。 */
+   public static int phantomMasterCount(int packed) {
+      return Math.max(1, packed & 0x1F);
+   }
+
+   public static int phantomSubPerMaster(int packed) {
+      return (packed >> 5) & 0x7;
+   }
+
+   public static int phantomTrackerPerSub(int packed) {
+      return (packed >> 8) & 0x7;
+   }
+
+   public static int phantomMaxTotalShards(int packed) {
+      return Math.max(24, (packed >> 11) & 0xFF);
+   }
+
+   public static int phantomStringsPerTarget(int packed) {
+      return Math.max(4, (packed >> 19) & 0x1F);
+   }
+
+   public static int phantomKind(int packed) {
+      return (packed >> 24) & 0x3;
+   }
+
+   /** 高 32 位为共享随机种子，低 24 位为刀色 RGB。 */
    private static long phantomSeed(ServerLevel level, int color) {
-      return ((long)level.getRandom().nextInt() << 32) | (color & 0xFFFFFFFFL);
+      return ((long)level.getRandom().nextInt() << 32) | (color & 0xFFFFFFL);
    }
 
-   /** 幻影审判开始（持续特效 START）：center = 环绕中心，lockedIds = 锁定的目标（按锁定顺序）。 */
-   public static int phantomSearch(ServerLevel level, Player player, Vec3 center, int color, int[] lockedIds) {
+   /** 幻影审判·千刃星流开始（持续特效 START）：origin = 施法者中心，direction = 视线，lockedIds = 锁定目标。 */
+   public static int phantomStart(ServerLevel level, Player player, Vec3 center, int color, int[] lockedIds) {
       ModConfig.PhantomJudgement config = ModConfig.COMMON.annihilationBlade.phantomJudgement;
+      int duration = QWQ.QingYi.annihilationblade.annihilation_blade.logic.PhantomJudgementPattern.DETONATE_TICK + 6;
       return FxSustained.start(level, new FxEventPacket(
-         FxTypes.PHANTOM_JUDGEMENT, center, Vec3.ZERO, config.range.getValue().floatValue(), config.visualScale.getValue().floatValue(),
-         packPhantom(PHANTOM_SEARCH), phantomSeed(level, color), player.getId(), lockedIds
-      ), config.searchTicks.getValue() + 10);
+         FxTypes.PHANTOM_JUDGEMENT, center, player.getLookAngle(), config.range.getValue().floatValue(), config.visualScale.getValue().floatValue(),
+         packPhantom(PHANTOM_START), phantomSeed(level, color), player.getId(), lockedIds
+      ), duration);
    }
 
-   /** 幻影审判降下剑雨（持续特效 UPDATE），必须在处决这些目标之前调用。center = 审判时剑阵中心。 */
-   public static void phantomRain(int handle, ServerLevel level, Player player, Vec3 center, int color, List<LivingEntity> targets) {
+   /** 幻影审判·千刃碎破齐爆斩绝（持续特效 UPDATE），必须在处决目标之前调用。 */
+   public static void phantomDetonate(int handle, ServerLevel level, Player player, Vec3 center, int color, List<LivingEntity> targets) {
       ModConfig.PhantomJudgement config = ModConfig.COMMON.annihilationBlade.phantomJudgement;
       int size = Math.min(targets.size(), FxEventPacket.MAX_ENTITIES);
       int[] ids = new int[size];
@@ -159,12 +189,12 @@ public final class AnnihilationFxEvents {
          ids[i] = targets.get(i).getId();
       }
       FxSustained.update(handle, new FxEventPacket(
-         FxTypes.PHANTOM_JUDGEMENT, center, Vec3.ZERO, config.range.getValue().floatValue(), config.visualScale.getValue().floatValue(),
-         packPhantom(PHANTOM_RAIN), phantomSeed(level, color), player.getId(), ids
+         FxTypes.PHANTOM_JUDGEMENT, center, player.getLookAngle(), config.range.getValue().floatValue(), config.visualScale.getValue().floatValue(),
+         packPhantom(PHANTOM_DETONATE), phantomSeed(level, color), player.getId(), ids
       ));
    }
 
-   /** 幻影审判结束（持续特效 STOP）：客户端继续播放剑雨与残留剑光直至结束。 */
+   /** 幻影审判结束（持续特效 STOP）：已齐爆时客户端继续播放斩绝余韵与百刃归鞘直至结束；未齐爆则提前平滑消散。 */
    public static void phantomEnd(int handle) {
       FxSustained.stop(handle);
    }
