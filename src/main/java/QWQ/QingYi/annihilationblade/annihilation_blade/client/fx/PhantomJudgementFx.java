@@ -1451,7 +1451,7 @@ public final class PhantomJudgementFx extends FxInstance {
       g.quad(relMid, axisU, axisV, color[0], color[1], color[2], alpha * nf);
    }
 
-   // ───────────────────────────── B 档全屏空间切裂（仅齐爆 9.5 tick 内激活） ─────────────────────────────
+   // ───────────────────────────── B 档全屏空间切裂（齐爆后保留可读余韵） ─────────────────────────────
 
    @Override
    public void collectPasses(FxFrame frame, List<FxPass> out) {
@@ -1459,7 +1459,7 @@ public final class PhantomJudgementFx extends FxInstance {
          return;
       }
       float post = this.age(frame.partialTick) - this.detonateAt;
-      if (post < 0.0F || post >= 9.5F) {
+      if (post < 0.0F || post >= 16.0F) {
          return;
       }
       float att = this.blastAttenuation(frame);
@@ -1467,8 +1467,10 @@ public final class PhantomJudgementFx extends FxInstance {
          return;
       }
 
-      // 切屏曲线：0 ~ 1.8t 迅速劈开 → 1.8 ~ 9.5t 清冽合拢
-      float snap = post < 1.6F ? FxMath.easeOutCubic(post / 1.6F) : (1.0F - FxMath.easeInCubic(FxMath.window(post, 1.6F, 9.5F)));
+      // 迅速劈开后短暂停住，让玩家看清裂缝，再缓慢合拢
+      float snap = post < 1.4F
+         ? FxMath.easeOutCubic(post / 1.4F)
+         : 1.0F - FxMath.easeInCubic(FxMath.window(post, 7.5F, 16.0F));
       if (snap <= 0.01F) {
          return;
       }
@@ -1502,13 +1504,13 @@ public final class PhantomJudgementFx extends FxInstance {
       candidates.sort(Comparator.comparingDouble((SliceLine l) -> l.score).reversed());
       int count = Math.min(MAX_SLICES, candidates.size());
       float[][] packed = new float[4][16];
-      boolean fullWindow = post < 5.8F;
+      float fullScreenCut = 1.0F - FxMath.window(post, 8.0F, 11.0F);
       for (int i = 0; i < count; i++) {
          SliceLine l = candidates.get(i);
-         boolean infinite = fullWindow && i < 4;
-         float slip = (infinite ? 0.036F : 0.015F) * snap * l.slipSign * att * l.influence;
-         float width = infinite ? 0.0030F : 0.0022F;
-         float seam = (infinite ? 0.96F : 0.62F) * snap * att * l.influence;
+         float infinite = i < 4 ? fullScreenCut : 0.0F;
+         float slip = (0.015F + 0.021F * infinite) * snap * l.slipSign * att * l.influence;
+         float width = 0.0022F + 0.0008F * infinite;
+         float seam = (0.62F + 0.34F * infinite) * snap * att * l.influence;
          float[] m = packed[i / 2];
          int base = (i % 2) * 8;
          m[base] = l.ax;
@@ -1517,7 +1519,7 @@ public final class PhantomJudgementFx extends FxInstance {
          m[base + 3] = l.by;
          m[base + 4] = slip;
          m[base + 5] = width;
-         m[base + 6] = infinite ? 1.0F : 0.0F;
+         m[base + 6] = infinite;
          m[base + 7] = seam;
       }
 
@@ -1525,7 +1527,7 @@ public final class PhantomJudgementFx extends FxInstance {
       Matrix4f cutsB = new Matrix4f().set(packed[1]);
       Matrix4f cutsC = new Matrix4f().set(packed[2]);
       Matrix4f cutsD = new Matrix4f().set(packed[3]);
-      float gap = fullWindow ? 0.88F : 0.55F;
+      float gap = 0.55F + 0.33F * fullScreenCut;
       out.add(new FxPass(FxPass.Kind.SCENE, () -> FxShaders.sliceScene, shader -> {
          shader.safeGetUniform("CutsA").set(cutsA);
          shader.safeGetUniform("CutsB").set(cutsB);
@@ -1558,21 +1560,23 @@ public final class PhantomJudgementFx extends FxInstance {
          screen.addFovKick(-0.06F * k * att);
       }
 
-      // 2. 第四幕齐爆斩绝：1.8 tick 凌厉反相定格 → 细腻紫白颗粒闪 + 中心清晰向心速度线 + FOV 弹射
+      // 2. 第四幕齐爆斩绝：短促反相定格 → 清晰切屏余韵 → 紫白颗粒闪与 FOV 弹射
       if (this.detonated) {
          float t = a - this.detonateAt;
          if (t >= 0.0F && t < 1.8F) {
             screen.addImpactFrame(att * 0.92F, t >= 0.7F && t < 1.45F);
          }
-         if (t >= 1.8F && t < 8.5F) {
-            float f = 1.0F - (t - 1.8F) / 6.7F;
-            screen.addFlash(0xEFE2FF, 0.52F * f * f * att, 0.78F);
+         if (t >= 3.0F && t < 9.0F) {
+            float f = 1.0F - (t - 3.0F) / 6.0F;
+            screen.addFlash(0xEFE2FF, 0.34F * f * f * att, 0.62F);
          }
          if (t >= 0.0F && t < 13.0F) {
-            float decay = 1.0F - t / 13.0F;
-            screen.addAberration(0.95F * decay * att);
-            screen.addDashBlur(0.85F * decay * att, focusUv);
-            screen.addBloomBoost(0.88F * Math.max(0.0F, 1.0F - t / 10.0F) * att);
+            float impact = t < 1.8F ? 1.0F - t / 1.8F : 0.0F;
+            float settle = 1.0F - FxMath.window(t, 7.5F, 16.0F);
+            float distortion = Math.max(impact, 0.28F * settle);
+            screen.addAberration(0.82F * distortion * att);
+            screen.addDashBlur(0.62F * distortion * att, focusUv);
+            screen.addBloomBoost(0.58F * Math.max(0.0F, 1.0F - t / 10.0F) * att);
             float kick = t < 2.0F ? FxMath.easeOutCubic(t / 2.0F) : (1.0F - FxMath.easeInOutSine(FxMath.window(t, 2.0F, 12.0F)));
             screen.addFovKick(0.11F * kick * att);
          }

@@ -31,9 +31,10 @@ void applyCut(vec4 seg, vec4 prm, vec2 p, float aspect, inout vec2 offset, inout
     vec2 q = p - a;
     float d = dot(q, n);
     float t = dot(q, dir) / len;
-    bool infinite = prm.z > 0.5;
-    float along = infinite ? 1.0 : smoothstep(-0.3, 0.0, t) * (1.0 - smoothstep(1.0, 1.3, t));
-    float band = infinite ? 1.0 : exp(-abs(d) / 0.05);
+    float infinite = clamp(prm.z, 0.0, 1.0);
+    float finiteAlong = smoothstep(-0.3, 0.0, t) * (1.0 - smoothstep(1.0, 1.3, t));
+    float along = mix(finiteAlong, 1.0, infinite);
+    float band = mix(exp(-abs(d) / 0.05), 1.0, infinite);
     float side = d >= 0.0 ? 1.0 : -1.0;
     vec2 o = dir * (side * prm.x * along * band);
     offset += vec2(o.x / aspect, o.y);

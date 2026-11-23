@@ -2350,7 +2350,7 @@ public final class SpatialFractureFx extends FxInstance {
          return;
       }
       List<SliceLine> lines = new ArrayList<>();
-      boolean fullScreenPhase = a >= COLLAPSE_START + 5.0F && a < DETONATE + 10.0F;
+      boolean fullScreenPhase = a >= COLLAPSE_START + 5.0F && a < DETONATE + 16.0F;
       if (fullScreenPhase) {
          float slip;
          float seam;
@@ -2359,7 +2359,8 @@ public final class SpatialFractureFx extends FxInstance {
             slip = 0.022F * build;
             seam = 0.72F * build;
          } else {
-            float snap = 1.0F - FxMath.window(a, DETONATE, DETONATE + 9.5F);
+            float post = a - DETONATE;
+            float snap = post < 7.0F ? 1.0F : 1.0F - FxMath.easeInCubic(FxMath.window(post, 7.0F, 16.0F));
             slip = 0.062F * snap * snap;
             seam = 1.12F * snap;
          }
@@ -2506,8 +2507,8 @@ public final class SpatialFractureFx extends FxInstance {
          // 冲击帧之后再给 6.5 tick 短促颗粒爆闪，让多壳层星云球与通天光柱清晰绽放不糊白
          float flash = t < 2.5F ? 0.0F : Math.max(0.0F, 1.0F - (t - 2.5F) / 6.5F);
          screen.addFlash(0xF6E6FF, 0.72F * flash * flash * blastAtt, 0.95F);
-         screen.addAberration(1.38F * Math.max(0.0F, 1.0F - t / 15.0F) * blastAtt);
-         screen.addDashBlur(1.18F * Math.max(0.0F, 1.0F - t / 13.0F) * blastAtt, blastUv);
+         screen.addAberration(0.92F * Math.max(0.0F, 1.0F - t / 15.0F) * blastAtt);
+         screen.addDashBlur(0.78F * Math.max(0.0F, 1.0F - t / 13.0F) * blastAtt, blastUv);
          screen.addBloomBoost(1.25F * Math.max(0.0F, 1.0F - t / 12.0F) * blastAtt);
          float kick = t < 2.2F ? FxMath.easeOutCubic(t / 2.2F) : 1.0F - FxMath.easeInOutSine(FxMath.window(t, 2.2F, 15.0F));
          screen.addFovKick(0.16F * kick * blastAtt);
