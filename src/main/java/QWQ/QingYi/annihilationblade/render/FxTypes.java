@@ -63,8 +63,8 @@ public final class FxTypes {
     */
    public static final int PHANTOM_JUDGEMENT = 18;
    /**
-    * 湮灭之刃 SE「虚无权域·万象湮灭」（一次性）。origin = 穹顶中心，direction = 视线，radius = 穹顶半径，
-    * scale = 视觉倍率，entityIds = 被抹除的目标。
+    * 湮灭之刃 SE「虚无权域·万象湮灭」（持续特效）。intParam = 阶段；origin = 穹顶中心，direction = 视线，radius = 穹顶半径，
+    * scale = 视觉倍率，entityIds = 当前剩余目标，targetTicks 与 entityIds 按索引对应其波前处决 tick。
     */
    public static final int VOID_DOMINION = 19;
 

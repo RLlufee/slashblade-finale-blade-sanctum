@@ -22,6 +22,15 @@ public final class AnnihilationFxEvents {
    /** 断空事件种类（intParam 低 4 位）：一次闪现斩击，高位为斩序号。 */
    public static final int DANKONG_STRIKE = 1;
 
+   /** 虚无权域持续阶段：宣言与领域展开。 */
+   public static final int VOID_PHASE_START = 0;
+   /** 虚无权域持续阶段：实体编目与冻结。 */
+   public static final int VOID_PHASE_CATALOG = 1;
+   /** 虚无权域持续阶段：球形扫描处决。 */
+   public static final int VOID_PHASE_SWEEP = 2;
+   /** 虚无权域持续阶段：全域归零与撤场。 */
+   public static final int VOID_PHASE_COLLAPSE = 3;
+
    private AnnihilationFxEvents() {
    }
 
@@ -108,17 +117,28 @@ public final class AnnihilationFxEvents {
       ));
    }
 
-   /** 虚无权域：在 center 展开半径 range 的穹顶并抹除 targets，必须在处决之前调用。 */
-   public static void voidDominion(ServerLevel level, Player player, Vec3 center, double range, double visualScale, List<LivingEntity> targets) {
-      int size = Math.min(targets.size(), FxEventPacket.MAX_ENTITIES);
-      int[] ids = new int[size];
-      for (int i = 0; i < size; i++) {
-         ids[i] = targets.get(i).getId();
-      }
-      FxEvents.send(level, new FxEventPacket(
-         FxTypes.VOID_DOMINION, center, player.getLookAngle(), (float)range, (float)visualScale, 0,
-         level.getRandom().nextLong(), player.getId(), ids
-      ));
+   /** 虚无权域持续事件开始。 */
+   public static int voidDominionStart(ServerLevel level, Player player, Vec3 center, double range, double visualScale, int[] targetIds, int[] targetTicks, long seed, int duration) {
+      return FxSustained.start(level, voidDominionPacket(level, player, center, range, visualScale, VOID_PHASE_START, targetIds, targetTicks, seed), duration);
+   }
+
+   /** 虚无权域时间轴阶段更新，targetTicks 与 entityIds 按索引一一对应。 */
+   public static void voidDominionUpdate(int handle, ServerLevel level, Player player, Vec3 center, double range, double visualScale,
+                                         int phase, int[] targetIds, int[] targetTicks, long seed) {
+      FxSustained.update(handle, voidDominionPacket(level, player, center, range, visualScale, phase, targetIds, targetTicks, seed));
+   }
+
+   /** 虚无权域服务端阶段结束，客户端依阶段决定完成收束或异常撤域。 */
+   public static void voidDominionEnd(int handle) {
+      FxSustained.stop(handle);
+   }
+
+   private static FxEventPacket voidDominionPacket(ServerLevel level, Player player, Vec3 center, double range, double visualScale,
+                                                   int phase, int[] targetIds, int[] targetTicks, long seed) {
+      return new FxEventPacket(
+         FxTypes.VOID_DOMINION, center, player.getLookAngle(), (float)range, (float)visualScale,
+         phase, seed, player.getId(), targetIds, targetTicks
+      );
    }
 
    /** 幻影审判事件种类：千刃解离启阵（START）。 */

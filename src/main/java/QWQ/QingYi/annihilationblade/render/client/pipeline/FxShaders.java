@@ -45,6 +45,7 @@ public final class FxShaders {
    @Nullable public static ShaderInstance woundScene;
    @Nullable public static ShaderInstance starlessScene;
    @Nullable public static ShaderInstance eraseScene;
+   @Nullable public static ShaderInstance eraseVolume;
 
    private static int failures;
 
@@ -71,6 +72,7 @@ public final class FxShaders {
       register(event, "fx_wound_scene", DefaultVertexFormat.POSITION, shader -> woundScene = shader);
       register(event, "fx_starless_scene", DefaultVertexFormat.POSITION, shader -> starlessScene = shader);
       register(event, "fx_erase_scene", DefaultVertexFormat.POSITION, shader -> eraseScene = shader);
+      register(event, "fx_erase_volume", DefaultVertexFormat.POSITION, shader -> eraseVolume = shader);
       if (failures == 0) {
          Annihilationblade.LOGGER.info("[AnnihilationBlade FX] All renderer shaders registered.");
       }

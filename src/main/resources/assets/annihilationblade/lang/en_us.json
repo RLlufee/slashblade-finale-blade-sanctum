@@ -63,7 +63,7 @@
   "se.annihilationblade.terminus_echo": "§6§lTerminus Echo§8 · §eVoid Refrain",
   "se.annihilationblade.terminus_echo.desc": "Sends layered terminus echoes forward, forming repeated horizontal cuts that sweep through enemies like a fading refrain. Range, width, wave count, interval, cooldown, and target cap are configurable.",
   "se.annihilationblade.void_dominion": "§5§lVoid Dominion§8 · §dAll-Range Annihilation",
-  "se.annihilationblade.void_dominion.desc": "Unfolds a void dominion in front of the player, marks hostile targets inside the area, and erases them one by one. Domain range, target cap, cooldown, and visual scale are configurable.",
+  "se.annihilationblade.void_dominion.desc": "Anchors at the aimed terrain and unfolds through dimensional reduction, target cataloging, a spherical erasure sweep, singularity collapse, and reality restoration. Targets are executed as the wave reaches them. Empty swings do not trigger it. Range, target cap, cooldown, and visual scale are configurable.",
   "se.annihilationblade.causality_collapse": "§d§lCausality Collapse§8 · §5Chain Erasure",
   "se.annihilationblade.causality_collapse.desc": "Collapses causality from the first struck target, searches the nearest hostile targets, then creates anchors and slash bridges before chain execution. Chain radius, chain cap, cooldown, and visual scale are configurable.",
   "se.annihilationblade.starless_judgement": "§6§lStarless Judgement§8 · §eHeaven-Cleaving Verdict",

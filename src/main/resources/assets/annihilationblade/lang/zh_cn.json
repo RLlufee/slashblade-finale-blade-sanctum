@@ -63,7 +63,7 @@
   "se.annihilationblade.terminus_echo": "§6§l归墟回响§8·§e终焉余律",
   "se.annihilationblade.terminus_echo.desc": "§7沿玩家面朝方向推出§6多段归墟回响§7，连续生成§e横向切割带§7，像余音一样层层扫过§c前方敌群§7。§8射程、宽度、波次数、间隔、冷却与目标上限可配置。§r",
   "se.annihilationblade.void_dominion": "§5§l虚无权域§8·§d万象湮灭",
-  "se.annihilationblade.void_dominion.desc": "§7在玩家前方展开§5虚无权域§7，把区域内§c敌对单位§7纳入§6终焉判定§7并逐个§d抹除§7。§8领域范围、目标上限、冷却与视觉倍率可配置。§r",
+  "se.annihilationblade.void_dominion.desc": "§7以准星落点展开§5虚无权域§7，历经现实降维、实体编目、球形扫描删档、奇点归零与现实重绘；目标随波前抵达逐个接受§6终焉判定§7。§8空挥不触发，领域范围、目标上限、冷却与视觉倍率可配置。§r",
   "se.annihilationblade.causality_collapse": "§d§l因果坍缩§8·§5连锁抹消",
   "se.annihilationblade.causality_collapse.desc": "§7从首个命中目标开始§d坍缩因果§7，寻找附近最近§c敌对单位§7，生成§5锚点§7与§d桥接斩线§7后§6连锁处决§7。§8链半径、连锁目标数、冷却与视觉倍率可配置。§r",
   "se.annihilationblade.starless_judgement": "§6§l星寂裁决§8·§e断天终判",

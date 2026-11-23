@@ -63,7 +63,7 @@
   "se.annihilationblade.terminus_echo": "§6§l歸墟迴響§8·§e終焉餘律",
   "se.annihilationblade.terminus_echo.desc": "沿玩家面朝方向推出多段歸墟迴響，連續生成橫向切割帶，像餘音一樣層層掃過前方敵群。射程、寬度、波次、間隔、冷卻與目標上限可設定。",
   "se.annihilationblade.void_dominion": "§5§l虛無權域§8·§d萬象湮滅",
-  "se.annihilationblade.void_dominion.desc": "在玩家前方展開虛無權域，把區域內敵對單位納入終焉判定並逐個抹除。領域範圍、目標上限、冷卻與視覺倍率可設定。",
+  "se.annihilationblade.void_dominion.desc": "以準星落點展開虛無權域，歷經現實降維、實體編目、球形掃描刪檔、奇點歸零與現實重繪；目標隨波前抵達逐個接受終焉判定。空揮不觸發，領域範圍、目標上限、冷卻與視覺倍率可設定。",
   "se.annihilationblade.causality_collapse": "§d§l因果坍縮§8·§5連鎖抹消",
   "se.annihilationblade.causality_collapse.desc": "從首個命中目標開始坍縮因果，尋找附近最近敵對單位，生成錨點與橋接斬線後連鎖處決。鏈半徑、連鎖目標數、冷卻與視覺倍率可設定。",
   "se.annihilationblade.starless_judgement": "§6§l星寂裁決§8·§e斷天終判",

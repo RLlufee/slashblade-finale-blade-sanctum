@@ -587,6 +587,47 @@ public final class FxGeometry {
       this.vertex(v3.x, v3.y, v3.z, r, g, b, a, -1.0F, 1.0F);
    }
 
+   /** 轴对齐 3D 立方体，halfX/Y/Z 为半边长。 */
+   public void cube(Vector3f center, float halfX, float halfY, float halfZ, float r, float g, float b, float a) {
+      this.orientedCube(
+         center,
+         new Vector3f(halfX, 0.0F, 0.0F),
+         new Vector3f(0.0F, halfY, 0.0F),
+         new Vector3f(0.0F, 0.0F, halfZ),
+         r, g, b, a
+      );
+   }
+
+   /**
+    * 按三个半轴向量绘制封闭的 3D 立方体，六个面均复用 rawQuad。
+    * 调用者可在本体层绘制实心暗盒，再在 HDR 层叠加同轴的 12 棱线框。
+    */
+   public void orientedCube(Vector3f center, Vector3f axisU, Vector3f axisV, Vector3f axisW, float r, float g, float b, float a) {
+      if (this.builder == null || a <= 0.0F || axisU.lengthSquared() < 1.0E-8F || axisV.lengthSquared() < 1.0E-8F || axisW.lengthSquared() < 1.0E-8F) {
+         return;
+      }
+
+      Vector3f u = new Vector3f(axisU);
+      Vector3f v = new Vector3f(axisV);
+      Vector3f w = new Vector3f(axisW);
+      Vector3f minusU = new Vector3f(u).negate();
+      Vector3f minusV = new Vector3f(v).negate();
+      Vector3f minusW = new Vector3f(w).negate();
+
+      this.rawQuad(new Vector3f(center).add(minusU).add(minusV).add(w), new Vector3f(center).add(u).add(minusV).add(w),
+         new Vector3f(center).add(u).add(v).add(w), new Vector3f(center).add(minusU).add(v).add(w), r, g, b, a);
+      this.rawQuad(new Vector3f(center).add(u).add(minusV).add(minusW), new Vector3f(center).add(minusU).add(minusV).add(minusW),
+         new Vector3f(center).add(minusU).add(v).add(minusW), new Vector3f(center).add(u).add(v).add(minusW), r, g, b, a);
+      this.rawQuad(new Vector3f(center).add(minusU).add(v).add(w), new Vector3f(center).add(u).add(v).add(w),
+         new Vector3f(center).add(u).add(v).add(minusW), new Vector3f(center).add(minusU).add(v).add(minusW), r, g, b, a);
+      this.rawQuad(new Vector3f(center).add(minusU).add(minusV).add(minusW), new Vector3f(center).add(u).add(minusV).add(minusW),
+         new Vector3f(center).add(u).add(minusV).add(w), new Vector3f(center).add(minusU).add(minusV).add(w), r, g, b, a);
+      this.rawQuad(new Vector3f(center).add(u).add(minusV).add(w), new Vector3f(center).add(u).add(minusV).add(minusW),
+         new Vector3f(center).add(u).add(v).add(minusW), new Vector3f(center).add(u).add(v).add(w), r, g, b, a);
+      this.rawQuad(new Vector3f(center).add(minusU).add(minusV).add(minusW), new Vector3f(center).add(minusU).add(minusV).add(w),
+         new Vector3f(center).add(minusU).add(v).add(w), new Vector3f(center).add(minusU).add(v).add(minusW), r, g, b, a);
+   }
+
    /** 两点间的直线拖尾（火花、流星），头部宽、尾部尖。 */
    public void streak(Vector3f head, Vector3f tail, float halfWidth, float r, float g, float b, float a) {
       if (this.builder == null || a <= 0.0F) {
