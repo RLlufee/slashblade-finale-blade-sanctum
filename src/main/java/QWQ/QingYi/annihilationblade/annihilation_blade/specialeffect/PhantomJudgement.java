@@ -1,38 +1,53 @@
 package QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect;
 
+import QWQ.QingYi.annihilationblade.Annihilationblade;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.PhantomJudgementPattern;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
 import QWQ.QingYi.annihilationblade.registry.ModSpecialEffects;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
-import mods.flammpfeil.slashblade.event.SlashBladeEvent.DoSlashEvent;
+import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import mods.flammpfeil.slashblade.registry.specialeffects.SpecialEffect;
+import mods.flammpfeil.slashblade.util.InputCommand;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent.Phase;
 import net.minecraftforge.event.TickEvent.PlayerTickEvent;
+import net.minecraftforge.eventbus.api.Event;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
 /**
  * 湮灭之刃 SE「幻影审判·千刃星流」服务端逻辑。
  * <p>
- * 彻底移除服务端视觉实体（原原生召唤剑与残留剑），严格遵守 {@link PhantomJudgementPattern} 双端共享五幕时间轴：
+ * 彻底移除服务端视觉实体（原原生召唤剑与残留剑），改由鼠标左键（拔刀剑 {@link InputCommand#L_DOWN} 按下沿）独立发射，
+ * 避免与右键挥刀连招（如虚无权域、断空等）争抢触发窗口，并支持多组千刃序列并发运行：
  * <ul>
- *   <li>t = 0：挥刀锁定范围内合法目标，发送持续特效 {@code PHANTOM_START}（空挥不触发、不消耗冷却）；</li>
+ *   <li>t = 0：左键锁定范围内合法目标（优先未锁定目标，单 Boss 自动回退允许叠锁），发送持续特效 {@code PHANTOM_START}（无目标不触发、不消耗冷却）；</li>
  *   <li>t = SUPPRESS_TICK（22）：母刃初抵，施加轻减速与微悬浮压制，防止目标跑散且不提前秒杀；</li>
  *   <li>t = CAGE_TICK ~ DETONATE_TICK - 1（34 ~ 55）：万刃星牢合围，温和锚定悬停等待终判；</li>
  *   <li>t = DETONATE_TICK（56）：先发送 {@code PHANTOM_DETONATE} 锁定最终目标，再同步执行 {@link TerminusLogic#execute} 终焉处决并结束服务端占位，由客户端独立演完斩绝余韵与百刃归鞘。</li>
@@ -40,38 +55,107 @@ import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
  */
 @EventBusSubscriber(modid = "annihilationblade")
 public class PhantomJudgement extends SpecialEffect {
-   private static final Map<UUID, Sequence> ACTIVE = new HashMap<>();
+   /** 单玩家同屏允许并发推进的千刃星流序列上限（20t 冷却下 56t 寿命正常最多并发 3 组，留 1 组余量防 0 冷却刷爆）。 */
+   private static final int MAX_ACTIVE_SEQUENCES = 4;
+   /**
+    * 兼容新旧版本 SlashBlade Resharped 的 InputCommandEvent 包路径：
+    * 1.9.x 新版位于 event.handler，旧版（如 6164820）位于 event。
+    */
+   private static final String[] INPUT_EVENT_CANDIDATES = {
+      "mods.flammpfeil.slashblade.event.handler.InputCommandEvent",
+      "mods.flammpfeil.slashblade.event.InputCommandEvent"
+   };
+   private static final Map<UUID, List<Sequence>> ACTIVE = new HashMap<>();
    private static final Map<UUID, Long> LAST_TRIGGER = new HashMap<>();
+   private static boolean inputListenerRegistered = false;
 
    public PhantomJudgement() {
       super(0, false, false);
    }
 
+   /**
+    * 运行时探测并动态绑定拔刀剑 InputCommandEvent，避免跨 SlashBlade 版本包路径差异导致 FML 加载期 NoClassDefFoundError。
+    */
+   public static void registerInputListener() {
+      if (inputListenerRegistered) {
+         return;
+      }
+      ClassLoader loader = PhantomJudgement.class.getClassLoader();
+      MethodHandles.Lookup lookup = MethodHandles.publicLookup();
+      for (String className : INPUT_EVENT_CANDIDATES) {
+         try {
+            Class<?> rawClass = Class.forName(className, false, loader);
+            if (!Event.class.isAssignableFrom(rawClass)) {
+               continue;
+            }
+            MethodHandle getEntity = lookup.findVirtual(rawClass, "getEntity", MethodType.methodType(ServerPlayer.class));
+            MethodHandle getOld = lookup.findVirtual(rawClass, "getOld", MethodType.methodType(EnumSet.class));
+            MethodHandle getCurrent = lookup.findVirtual(rawClass, "getCurrent", MethodType.methodType(EnumSet.class));
+            @SuppressWarnings("unchecked")
+            Class<? extends Event> eventClass = (Class<? extends Event>)rawClass;
+            bindInputEvent(eventClass, getEntity, getOld, getCurrent);
+            inputListenerRegistered = true;
+            Annihilationblade.LOGGER.info("[AnnihilationBlade] PhantomJudgement bound left-click input listener to {}", className);
+            return;
+         } catch (ClassNotFoundException ignored) {
+            // 当前环境不是该版本包路径，继续尝试下一个候选
+         } catch (ReflectiveOperationException exception) {
+            Annihilationblade.LOGGER.warn("[AnnihilationBlade] Failed to inspect {}: {}", className, exception.toString());
+         }
+      }
+      Annihilationblade.LOGGER.error("[AnnihilationBlade] Unable to locate SlashBlade InputCommandEvent; PhantomJudgement left-click trigger disabled.");
+   }
+
+   private static <T extends Event> void bindInputEvent(
+      Class<T> eventClass, MethodHandle getEntity, MethodHandle getOld, MethodHandle getCurrent
+   ) {
+      MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, eventClass, event -> {
+         try {
+            ServerPlayer player = (ServerPlayer)getEntity.invoke(event);
+            EnumSet<?> oldCommands = (EnumSet<?>)getOld.invoke(event);
+            EnumSet<?> currentCommands = (EnumSet<?>)getCurrent.invoke(event);
+            handleInputCommand(player, oldCommands, currentCommands);
+         } catch (Throwable throwable) {
+            Annihilationblade.LOGGER.error("[AnnihilationBlade] Error handling PhantomJudgement left-click input event", throwable);
+         }
+      });
+   }
+
    public static void clearPlayer(Level level, UUID playerId) {
-      Sequence sequence = ACTIVE.remove(playerId);
-      if (sequence != null) {
-         AnnihilationFxEvents.phantomEnd(sequence.fxHandle);
+      List<Sequence> sequences = ACTIVE.remove(playerId);
+      if (sequences != null) {
+         for (Sequence sequence : sequences) {
+            AnnihilationFxEvents.phantomEnd(sequence.fxHandle);
+         }
       }
       LAST_TRIGGER.remove(playerId);
    }
 
-   @SubscribeEvent
-   public static void onDoingSlash(DoSlashEvent event) {
-      if (!(event.getUser() instanceof ServerPlayer player)) {
+   private static void handleInputCommand(ServerPlayer player, EnumSet<?> oldCommands, EnumSet<?> currentCommands) {
+      if (player == null || oldCommands == null || currentCommands == null || player.isSpectator() || !player.isAlive()) {
+         return;
+      }
+      // 仅在左键按下沿触发，与右键挥刀（DoSlashEvent）彻底分流
+      if (oldCommands.contains(InputCommand.L_DOWN) || !currentCommands.contains(InputCommand.L_DOWN)) {
          return;
       }
       if (Dankong.isActive(player)) {
          return;
       }
-      ISlashBladeState state = event.getSlashBladeState();
-      if (!state.hasSpecialEffect(ModSpecialEffects.PHANTOM_JUDGEMENT.getId())) {
+      ItemStack blade = player.getMainHandItem();
+      if (blade.isEmpty()) {
          return;
       }
-      if (ACTIVE.containsKey(player.getUUID())) {
+      ISlashBladeState state = blade.getCapability(ItemSlashBlade.BLADESTATE).orElse(null);
+      if (state == null || state.isBroken() || state.isSealed() || !state.hasSpecialEffect(ModSpecialEffects.PHANTOM_JUDGEMENT.getId())) {
          return;
       }
       ModConfig.PhantomJudgement config = ModConfig.COMMON.annihilationBlade.phantomJudgement;
       if (!config.enabled.getValue()) {
+         return;
+      }
+      List<Sequence> activeList = ACTIVE.get(player.getUUID());
+      if (activeList != null && activeList.size() >= MAX_ACTIVE_SEQUENCES) {
          return;
       }
       long gameTime = player.level().getGameTime();
@@ -82,14 +166,15 @@ public class PhantomJudgement extends SpecialEffect {
       }
 
       ServerLevel level = player.serverLevel();
-      List<TargetLock> locks = collectTargets(level, player, config);
+      List<TargetLock> locks = collectTargets(level, player, config, activeList);
       if (locks.isEmpty()) {
          return;
       }
 
       LAST_TRIGGER.put(player.getUUID(), gameTime);
       Sequence sequence = new Sequence(state.getColorCode(), locks);
-      ACTIVE.put(player.getUUID(), sequence);
+      ACTIVE.computeIfAbsent(player.getUUID(), ignored -> new ArrayList<>()).add(sequence);
+      player.swing(InteractionHand.MAIN_HAND, true);
 
       Vec3 center = PhantomJudgementPattern.casterCenter(player.position(), player.getBbHeight());
       sequence.fxHandle = AnnihilationFxEvents.phantomStart(level, player, center, sequence.color, lockedEntityIds(level, locks));
@@ -104,8 +189,8 @@ public class PhantomJudgement extends SpecialEffect {
       if (event.phase != Phase.END || !(event.player instanceof ServerPlayer player)) {
          return;
       }
-      Sequence sequence = ACTIVE.get(player.getUUID());
-      if (sequence == null) {
+      List<Sequence> sequences = ACTIVE.get(player.getUUID());
+      if (sequences == null || sequences.isEmpty()) {
          return;
       }
       ServerLevel level = player.serverLevel();
@@ -114,27 +199,35 @@ public class PhantomJudgement extends SpecialEffect {
          return;
       }
 
-      sequence.age++;
+      Iterator<Sequence> iterator = sequences.iterator();
+      while (iterator.hasNext()) {
+         Sequence sequence = iterator.next();
+         sequence.age++;
 
-      // 阶段一：母刃初抵目标，轻减速 + 微升空失重，避免怪物四散脱离星牢
-      if (sequence.age == PhantomJudgementPattern.SUPPRESS_TICK) {
-         suppressTargets(level, player, sequence);
+         // 阶段一：母刃初抵目标，轻减速 + 微升空失重，避免怪物四散脱离星牢
+         if (sequence.age == PhantomJudgementPattern.SUPPRESS_TICK) {
+            suppressTargets(level, player, sequence);
+         }
+
+         // 阶段二：万刃星牢合围期间，锚定目标于阵心微悬停（每 3 tick 维护一次）
+         if (sequence.age == PhantomJudgementPattern.CAGE_TICK) {
+            refreshCageAnchors(level, player, sequence);
+            holdTargetsInCage(level, player, sequence);
+         } else if (sequence.age > PhantomJudgementPattern.CAGE_TICK
+            && sequence.age < PhantomJudgementPattern.DETONATE_TICK
+            && (sequence.age - PhantomJudgementPattern.CAGE_TICK) % 3 == 0) {
+            holdTargetsInCage(level, player, sequence);
+         }
+
+         // 阶段三：齐爆斩绝瞬间——先发 UPDATE 通知客户端精准同步引爆，再执行终焉处决
+         if (sequence.age >= PhantomJudgementPattern.DETONATE_TICK) {
+            iterator.remove();
+            detonateJudgement(level, player, sequence);
+         }
       }
 
-      // 阶段二：万刃星牢合围期间，锚定目标于阵心微悬停（每 3 tick 维护一次）
-      if (sequence.age == PhantomJudgementPattern.CAGE_TICK) {
-         refreshCageAnchors(level, player, sequence);
-         holdTargetsInCage(level, player, sequence);
-      } else if (sequence.age > PhantomJudgementPattern.CAGE_TICK
-         && sequence.age < PhantomJudgementPattern.DETONATE_TICK
-         && (sequence.age - PhantomJudgementPattern.CAGE_TICK) % 3 == 0) {
-         holdTargetsInCage(level, player, sequence);
-      }
-
-      // 阶段三：齐爆斩绝瞬间——先发 UPDATE 通知客户端精准同步引爆，再执行终焉处决
-      if (sequence.age >= PhantomJudgementPattern.DETONATE_TICK) {
+      if (sequences.isEmpty()) {
          ACTIVE.remove(player.getUUID());
-         detonateJudgement(level, player, sequence);
       }
    }
 
@@ -206,14 +299,40 @@ public class PhantomJudgement extends SpecialEffect {
       AnnihilationFxEvents.phantomEnd(sequence.fxHandle);
    }
 
-   private static List<TargetLock> collectTargets(ServerLevel level, ServerPlayer player, ModConfig.PhantomJudgement config) {
+   private static List<TargetLock> collectTargets(
+      ServerLevel level, ServerPlayer player, ModConfig.PhantomJudgement config, List<Sequence> activeSequences
+   ) {
       List<LivingEntity> entities = SpecialEffectSupport.radialTargets(level, player, player.position(), config.range.getValue());
+      if (entities.isEmpty()) {
+         return List.of();
+      }
+      Set<UUID> alreadyLocked = new HashSet<>();
+      if (activeSequences != null) {
+         for (Sequence active : activeSequences) {
+            for (TargetLock lock : active.targets) {
+               alreadyLocked.add(lock.targetId);
+            }
+         }
+      }
+
       List<TargetLock> locks = new ArrayList<>();
       int maxTargets = config.maxTargets.getValue();
+      // 优先锁定尚未被其他进行中星牢锁定的新目标，避免连射全砸在将死目标身上漏掉其余敌群
       for (LivingEntity entity : entities) {
-         locks.add(new TargetLock(entity.getUUID(), SpecialEffectSupport.centerOf(entity)));
-         if (locks.size() >= maxTargets) {
-            break;
+         if (!alreadyLocked.contains(entity.getUUID())) {
+            locks.add(new TargetLock(entity.getUUID(), SpecialEffectSupport.centerOf(entity)));
+            if (locks.size() >= maxTargets) {
+               return locks;
+            }
+         }
+      }
+      // 若范围内全部目标皆已处于星牢中（如单挑 Boss 连发），则回退允许叠锁
+      if (locks.isEmpty()) {
+         for (LivingEntity entity : entities) {
+            locks.add(new TargetLock(entity.getUUID(), SpecialEffectSupport.centerOf(entity)));
+            if (locks.size() >= maxTargets) {
+               break;
+            }
          }
       }
       return locks;

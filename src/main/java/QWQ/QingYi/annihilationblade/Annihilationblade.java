@@ -1,5 +1,6 @@
 package QWQ.QingYi.annihilationblade;
 
+import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.PhantomJudgement;
 import QWQ.QingYi.annihilationblade.network.ModNetwork;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
 import QWQ.QingYi.annihilationblade.registry.ModComboStates;
@@ -33,6 +34,7 @@ public class Annihilationblade {
       ModSounds.register(modEventBus);
       ModCreativeTabs.CREATIVE_MODE_TABS.register(modEventBus);
       ModNetwork.register();
+      PhantomJudgement.registerInputListener();
       ConfigManager.getInstance().registerServerConfigHandler(ModConfig.COMMON, ServerConfigManager.PermissionChecker.IS_OPERATOR);
       MinecraftForge.EVENT_BUS.register(this);
    }

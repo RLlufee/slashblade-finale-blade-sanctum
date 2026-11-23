@@ -332,7 +332,7 @@ public final class ModConfig {
          this.maxTotalShards = intValue("max_total_shards", 128, 24, 200, "单次千刃星流同屏碎刃总数硬上限，建议 96-144。", "Hard cap of simultaneous shards per cast. Suggested: 96-144.");
          this.slashStringsPerTarget = intValue("slash_strings_per_target", 10, 4, 16, "单目标终幕爆裂斩绝线基础数量，建议 8-12。", "Base slash-string count per target on detonation. Suggested: 8-12.");
          this.maxTargets = intValue("max_targets", 24, 1, 96, "幻影审判最多锁定目标数，建议 12-36。", "Maximum Phantom Judgement targets. Suggested: 12-36.");
-         this.cooldownTicks = intValue("cooldown_ticks", 60, 0, 240, "触发冷却 tick（20 tick=1秒），建议 56-90。", "Trigger cooldown in ticks (20 ticks = 1s). Suggested: 56-90.");
+         this.cooldownTicks = intValue("cooldown_ticks", 20, 0, 240, "左键发射冷却 tick（20 tick=1秒），建议 20-60。", "Left-click launch cooldown in ticks (20 ticks = 1s). Suggested: 20-60.");
          this.visualScale = visualScale(1.0);
       }
    }
