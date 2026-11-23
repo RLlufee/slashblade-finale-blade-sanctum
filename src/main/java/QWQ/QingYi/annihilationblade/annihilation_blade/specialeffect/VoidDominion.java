@@ -47,7 +47,9 @@ public class VoidDominion extends SpecialEffect {
       DominionSequence sequence = ACTIVE.remove(playerId);
       if (sequence != null) {
          sequence.releaseTargets();
-         AnnihilationFxEvents.voidDominionEnd(sequence.handle);
+         if (sequence.age < VoidDominionPattern.COLLAPSE_TICK) {
+            AnnihilationFxEvents.voidDominionEnd(sequence.handle);
+         }
       }
       LAST_TRIGGER.remove(playerId);
    }
@@ -144,22 +146,31 @@ public class VoidDominion extends SpecialEffect {
          ModConfig.VoidDominion config = ModConfig.COMMON.annihilationBlade.voidDominion;
          if (!player.isAlive() || player.isRemoved() || player.serverLevel() != sequence.level || !config.enabled.getValue()) {
             sequence.releaseTargets();
-            AnnihilationFxEvents.voidDominionEnd(sequence.handle);
+            if (sequence.age < VoidDominionPattern.COLLAPSE_TICK) {
+               AnnihilationFxEvents.voidDominionEnd(sequence.handle);
+            }
             iterator.remove();
             continue;
          }
 
          int age = sequence.age;
+         if (age >= VoidDominionPattern.TOTAL_LIFETIME) {
+            sequence.releaseTargets();
+            sequence.targets.clear();
+            iterator.remove();
+            continue;
+         }
          if (age == VoidDominionPattern.CATALOG_END_TICK - 12) {
             prune(sequence);
-            sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
+             sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
          }
          if (age >= VoidDominionPattern.CATALOG_END_TICK - 12 && age < VoidDominionPattern.COLLAPSE_TICK) {
-            freeze(sequence, age);
+            freeze(sequence);
          }
          if (age >= VoidDominionPattern.CATALOG_END_TICK && age <= VoidDominionPattern.SWEEP_END_TICK) {
             if (age == VoidDominionPattern.SWEEP_START_TICK) {
                refreshSchedule(sequence);
+                sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
                sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_SWEEP);
             }
             executeArrived(sequence, age);
@@ -169,7 +180,7 @@ public class VoidDominion extends SpecialEffect {
                sequence.handle, sequence.level, player, sequence.center, sequence.radius, sequence.scale,
                AnnihilationFxEvents.VOID_PHASE_COLLAPSE, new int[0], new int[0], sequence.seed
             );
-            for (TargetPlan plan : sequence.targets) {
+            for (TargetPlan plan : new ArrayList<>(sequence.targets)) {
                LivingEntity target = resolveTarget(sequence, plan);
                if (target != null && SlashBladeTargeting.canAttack(player, target)) {
                   release(plan, target);
@@ -177,9 +188,7 @@ public class VoidDominion extends SpecialEffect {
                }
             }
             sequence.releaseTargets();
-            AnnihilationFxEvents.voidDominionEnd(sequence.handle);
-            iterator.remove();
-            continue;
+            sequence.targets.clear();
          }
          sequence.age++;
       }
@@ -211,10 +220,7 @@ public class VoidDominion extends SpecialEffect {
       }
    }
 
-   private static void freeze(DominionSequence sequence, int age) {
-      if ((age - (VoidDominionPattern.CATALOG_END_TICK - 12)) % 3 != 0) {
-         return;
-      }
+   private static void freeze(DominionSequence sequence) {
       for (TargetPlan plan : sequence.targets) {
          LivingEntity target = resolveTarget(sequence, plan);
          if (target == null) {
@@ -308,10 +314,19 @@ public class VoidDominion extends SpecialEffect {
    private static void releaseSuspension(LivingEntity target) {
       UUID targetId = target.getUUID();
       for (DominionSequence sequence : ACTIVE.values()) {
-         for (TargetPlan plan : sequence.targets) {
+         Iterator<TargetPlan> iterator = sequence.targets.iterator();
+         boolean removed = false;
+         while (iterator.hasNext()) {
+            TargetPlan plan = iterator.next();
             if (plan.uuid.equals(targetId)) {
                release(plan, target);
+               iterator.remove();
+               removed = true;
             }
+         }
+         if (removed && sequence.age >= VoidDominionPattern.SWEEP_START_TICK
+               && sequence.age < VoidDominionPattern.COLLAPSE_TICK) {
+            sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
          }
       }
    }

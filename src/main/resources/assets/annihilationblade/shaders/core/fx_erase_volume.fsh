@@ -32,10 +32,10 @@ void main() {
         float t0 = max(hit.x, 0.0);
         float t1 = min(hit.y, sceneT);
         if (hit.y > 0.0 && t0 < t1) {
-            int steps = int(clamp(Steps, 12.0, 32.0));
+            int steps = int(clamp(Steps * 1.25, 15.0, 40.0));
             float dt = (t1 - t0) / float(steps);
             float jitter = fxIGN(gl_FragCoord.xy, FxTime);
-            for (int i = 0; i < 32; i++) {
+            for (int i = 0; i < 40; i++) {
                 if (i >= steps) {
                     break;
                 }
@@ -77,7 +77,7 @@ void main() {
     }
 
     vec4 clipCenter = ViewProj * vec4(center, 1.0);
-    if (Phase.w > 0.001 && clipCenter.w > 0.05) {
+    if (Phase.w > 0.001 && tc > 0.0 && tc < sceneT && clipCenter.w > 0.05) {
         vec2 centerUv = clipCenter.xy / clipCenter.w * 0.5 + 0.5;
         float horizontal = exp(-abs(uv.y - centerUv.y) * 520.0);
         float point = exp(-length((uv - centerUv) * vec2(OutSize.x / max(OutSize.y, 1.0), 1.0)) * 180.0);

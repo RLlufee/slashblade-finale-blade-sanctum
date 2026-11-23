@@ -1,11 +1,9 @@
 package QWQ.QingYi.annihilationblade.annihilation_blade.logic;
 
 import javax.annotation.Nullable;
-import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -87,8 +85,12 @@ public final class VoidDominionPattern {
       }
 
       Vec3 aimPoint = eyePos.add(direction.scale(distance));
-      BlockPos surfacePos = BlockPos.containing(aimPoint.x, aimPoint.y, aimPoint.z);
-      double surfaceY = level.getHeight(Heightmap.Types.MOTION_BLOCKING, surfacePos.getX(), surfacePos.getZ());
+      Vec3 probeStart = aimPoint.add(0.0, 0.25, 0.0);
+      Vec3 probeEnd = aimPoint.add(0.0, -Math.max(16.0, range + 8.0), 0.0);
+      BlockHitResult surfaceHit = level.clip(new ClipContext(
+         probeStart, probeEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, null
+      ));
+      double surfaceY = surfaceHit.getType() == HitResult.Type.BLOCK ? surfaceHit.getLocation().y : aimPoint.y;
       double centerY = surfaceY + Math.max(2.0, range * 0.48);
       return new Vec3(aimPoint.x, centerY, aimPoint.z);
    }

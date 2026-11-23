@@ -27,7 +27,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -62,7 +61,7 @@ public final class VoidDominionFx extends FxInstance {
       this.casterId = packet.casterId();
       this.phase = packet.intParam();
       this.collapseStarted = this.phase >= AnnihilationFxEvents.VOID_PHASE_COLLAPSE;
-      this.updateGround(level);
+      this.updateGround();
       this.applySnapshot(level, packet, false);
    }
 
@@ -74,7 +73,7 @@ public final class VoidDominionFx extends FxInstance {
    @Override
    public void onSustainedUpdate(ClientLevel level, FxEventPacket packet) {
       this.center = packet.origin();
-      this.updateGround(level);
+      this.updateGround();
       int nextPhase = packet.intParam();
       this.applySnapshot(level, packet, nextPhase >= AnnihilationFxEvents.VOID_PHASE_SWEEP);
       this.phase = nextPhase;
@@ -164,10 +163,8 @@ public final class VoidDominionFx extends FxInstance {
       return count;
    }
 
-   private void updateGround(ClientLevel level) {
-      int x = Mth.floor(this.center.x);
-      int z = Mth.floor(this.center.z);
-      double surface = level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z);
+   private void updateGround() {
+      double surface = this.center.y - Math.max(2.0, this.radius * 0.48);
       this.ground = new Vec3(this.center.x, surface + 0.05, this.center.z);
    }
 
@@ -359,11 +356,10 @@ public final class VoidDominionFx extends FxInstance {
       Vector3f u = new Vector3f(frame.left).mul(1.25F * this.scale * horizontal);
       Vector3f v = new Vector3f(frame.up).mul(1.25F * this.scale * vertical);
       Vector3f w = viewVector(frame).mul(0.16F * this.scale);
-      body.begin(Style.AFTERIMAGE, 0.9F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
-      body.geoCenter(center);
+      body.begin(Style.AFTERIMAGE, 0.9F, 0.0F, 1.0F, 0.72F, 0.0F, 0.0F);
       body.sphere(center, Math.max(0.025F, 0.42F * this.scale * horizontal), 8, 16, 0.0F, 0.0F, 0.0F, 0.0F, 0.95F * presence);
+      body.begin(Style.AFTERIMAGE, 0.65F, 0.0F, 1.0F, 0.18F, 0.0F, 0.0F);
       body.orientedCube(center, u, v, w, 0.0F, 0.0F, 0.0F, 0.8F * presence);
-      body.clearGeoCenter();
    }
 
    @Override
@@ -393,12 +389,12 @@ public final class VoidDominionFx extends FxInstance {
       Vector3f tilt = new Vector3f(frame.up).fma(0.42F, frame.left).add(view).normalize();
       float ringRadius = 1.12F * this.scale * pulse * horizontal;
 
-      g.begin(Style.RING, 4.6F, 0.0F, 0.95F, 0.025F, 0.0F, 0.0F);
+      g.begin(Style.RIBBON, 4.6F, 0.0F, 0.0F, 0.0F, 0.0F, 0.25F);
       g.torus(center, view, ringRadius, Math.max(0.012F, 0.035F * this.scale * vertical), 48, 6, t * 0.025F, 1.0F, 1.0F, 1.0F, glyph);
       g.torus(center, tilt, ringRadius * 1.12F, Math.max(0.009F, 0.019F * this.scale * vertical), 48, 5, -t * 0.019F, 0.77F, 0.79F, 0.82F, glyph * 0.82F);
       g.torus(center, new Vector3f(frame.left).normalize(), ringRadius * 0.92F, Math.max(0.008F, 0.014F * this.scale * vertical), 40, 5, t * 0.032F, 0.9F, 0.91F, 0.93F, glyph * 0.62F);
 
-      g.begin(Style.RIBBON, 6.5F, 0.0F, 8.0F, 0.0F, 0.0F, 0.25F);
+      g.begin(Style.PLASMA_BEAM, 4.8F, 0.0F, 2.0F, 0.0F, 0.0F, 0.52F);
       float slashAngle = (float)Math.toRadians(-48.0) + t * 0.012F;
       Vector3f slash = new Vector3f(frame.left).mul((float)Math.cos(slashAngle)).add(new Vector3f(frame.up).mul((float)Math.sin(slashAngle)));
       Vector3f slashExtent = new Vector3f(slash).mul(1.62F * this.scale * horizontal);
@@ -433,7 +429,7 @@ public final class VoidDominionFx extends FxInstance {
 
       Vector3f ground = frame.rel(this.ground);
       float grid = FxMath.window(t, 1.0F, 5.0F) * (1.0F - FxMath.window(t, 62.0F, 68.0F)) * architecture;
-      g.begin(Style.RING, 2.2F, 0.0F, 0.95F, 0.008F, 0.0F, 0.0F);
+      g.begin(Style.RING, 2.2F, 0.06F, 0.95F, 0.008F, 0.0F, 0.0F);
       for (int i = 1; i <= 5; i++) {
          float ring = activeRadius * i / 5.0F;
          g.quad(ground, new Vector3f(ring, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, ring), 0.78F, 0.8F, 0.83F, grid * (i == 5 ? 0.7F : 0.35F));
@@ -467,11 +463,11 @@ public final class VoidDominionFx extends FxInstance {
          float edgeFade = 1.0F - FxMath.window(t, VoidDominionPattern.SWEEP_END_TICK - 0.5F, VoidDominionPattern.SWEEP_END_TICK + 1.0F);
          float shellAlpha = alpha * edgeFade;
          Vector3f view = viewVector(frame).normalize();
-         g.begin(Style.GLOW, 4.8F, 0.0F, 1.0F, 0.2F, 0.0F, 0.0F);
+         g.begin(Style.CORONA, 4.8F, 0.0F, 4.8F, 1.0F, 0.12F, 0.35F);
          g.geoCenter(center);
          g.sphere(center, Math.max(0.08F, front), 12, 24, t * 0.01F, 0.92F, 0.94F, 0.98F, shellAlpha * 0.22F);
          g.clearGeoCenter();
-         g.begin(Style.RING, 5.5F, 0.0F, 0.95F, 0.02F, 0.0F, 0.0F);
+         g.begin(Style.RIBBON, 5.5F, 0.0F, 0.0F, 0.0F, 0.0F, 0.2F);
          g.torus(center, view, Math.max(0.1F, front), 0.035F * this.scale, 56, 6, t * 0.04F, 1.0F, 1.0F, 1.0F, shellAlpha);
          g.begin(Style.RIBBON, 4.4F, 0.0F, 8.0F, 0.0F, 0.0F, 0.2F);
          this.drawMeridian(g, frame, center, front, t * 0.009F, shellAlpha * 0.68F);
@@ -505,7 +501,7 @@ public final class VoidDominionFx extends FxInstance {
       Vector3f center = frame.rel(this.center);
       g.begin(Style.RING, 3.4F, 0.0F, 0.95F, 0.015F, 0.0F, 0.0F);
       g.quad(frame.rel(this.ground), new Vector3f(restore, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, restore), 0.92F, 0.93F, 0.95F, fade * 0.7F);
-      g.begin(Style.RING, 4.2F, 0.0F, 0.95F, 0.022F, 0.0F, 0.0F);
+      g.begin(Style.RIBBON, 4.2F, 0.0F, 0.0F, 0.0F, 0.0F, 0.2F);
       g.torus(center, new Vector3f(0.0F, 1.0F, 0.0F), Math.max(0.04F, restore), 0.03F * this.scale, 56, 5, t * 0.025F, 0.95F, 0.96F, 0.98F, fade);
    }
 
@@ -542,9 +538,9 @@ public final class VoidDominionFx extends FxInstance {
 
    private void renderCatalogAndDeletions(FxGeometry g, FxFrame frame, float t, float alpha) {
       float catalog = FxMath.window(t, 14.0F, 17.0F) * (1.0F - FxMath.window(t, 25.0F, 27.0F)) * alpha;
-      g.begin(Style.RIBBON, 3.3F, 0.0F, 7.0F, 0.0F, 0.0F, 0.18F);
       int rendered = 0;
       for (Erased target : this.targets.values()) {
+         g.begin(Style.RIBBON, 3.3F, 0.0F, 7.0F, 0.0F, 0.0F, 0.18F);
          boolean catalogTarget = rendered < MAX_VISUAL_TARGETS;
          Vector3f foot = frame.rel(target.foot);
          Vector3f top = frame.rel(target.foot.add(0.0, target.height + 0.35, 0.0));
@@ -559,7 +555,7 @@ public final class VoidDominionFx extends FxInstance {
             g.cube(cursor, 0.055F * this.scale, 0.055F * this.scale, 0.055F * this.scale, WHITE[0], WHITE[1], WHITE[2], catalog);
          }
          if ((catalogTarget && catalog > 0.001F && this.activeTargets.contains(target.id)) || target.impactAge >= 0) {
-            g.begin(Style.AFTERIMAGE, 1.7F, 0.0F, 1.0F, 0.8F, 0.0F, 0.0F);
+            g.begin(Style.AFTERIMAGE, 1.1F, 0.0F, 1.0F, 0.12F, 0.0F, 0.0F);
             this.renderCapturedModel(g, frame, target, t, catalog > 0.001F ? catalog : alpha);
          }
          this.renderTargetDeletion(g, frame, target, t, alpha);
@@ -570,10 +566,13 @@ public final class VoidDominionFx extends FxInstance {
       if (restore > 0.001F) {
          g.begin(Style.AFTERIMAGE, 2.0F, 0.0F, 1.0F, 0.9F, 0.0F, 0.0F);
          for (Erased target : this.targets.values()) {
+            if (target.impactAge < 0) {
+               continue;
+            }
             for (Voxel voxel : target.voxels) {
                Vector3f p = frame.rel(voxel.position(t, target.impactAge, this.center));
-               float size = voxel.size * (0.35F + 0.65F * restore);
-               g.cube(p, size, size, size, voxel.shade, voxel.shade, voxel.shade, restore * voxel.alpha);
+               float size = voxel.size * 0.35F;
+               g.cube(p, size, size, size, voxel.shade, voxel.shade, voxel.shade, restore * voxel.alpha * 0.4F);
             }
          }
       }
@@ -666,7 +665,7 @@ public final class VoidDominionFx extends FxInstance {
       }
 
       float debrisAge = elapsed - 5.0F;
-      if (debrisAge >= 0.0F && debrisAge < 30.0F) {
+      if (debrisAge >= 0.0F && debrisAge < 30.0F && t < VoidDominionPattern.RESTORE_START_TICK) {
          float collapse = FxMath.easeInCubic(FxMath.window(t, VoidDominionPattern.COLLAPSE_TICK, VoidDominionPattern.ZERO_SNAP_TICK));
          g.begin(Style.AFTERIMAGE, 2.6F, 0.0F, 1.0F, 0.9F, 0.0F, 0.0F);
          for (Voxel voxel : target.voxels) {
@@ -727,33 +726,38 @@ public final class VoidDominionFx extends FxInstance {
       }
       Vector3f center = frame.rel(this.center);
       float radius = t >= VoidDominionPattern.RESTORE_START_TICK ? this.restoreRadius(t) : this.domainRadius(t);
+      float sceneRadius = radius;
+      if (t >= VoidDominionPattern.ZERO_SNAP_TICK && t < VoidDominionPattern.RESTORE_START_TICK) {
+         float snappedRadius = this.domainRadius(VoidDominionPattern.ZERO_SNAP_TICK);
+         sceneRadius = Mth.lerp(FxMath.window(t, VoidDominionPattern.ZERO_SNAP_TICK, VoidDominionPattern.RESTORE_START_TICK), snappedRadius, this.radius);
+      }
       float front = t >= VoidDominionPattern.SWEEP_START_TICK && t <= VoidDominionPattern.SWEEP_END_TICK
          ? VoidDominionPattern.frontRadius(t, this.radius) : this.radius;
-      float mosaic;
+      float glitchBlock;
       if (t < VoidDominionPattern.EXPAND_END_TICK) {
-         mosaic = Mth.lerp(FxMath.window(t, 0.0F, 3.0F), 1.0F, 16.0F);
+         glitchBlock = Mth.lerp(FxMath.window(t, 0.0F, 3.0F), 1.0F, 16.0F);
       } else if (t < VoidDominionPattern.RESTORE_START_TICK) {
-         mosaic = Mth.lerp(FxMath.window(t, VoidDominionPattern.ZERO_SNAP_TICK, VoidDominionPattern.RESTORE_START_TICK), 16.0F, 9.0F);
+         glitchBlock = Mth.lerp(FxMath.window(t, VoidDominionPattern.ZERO_SNAP_TICK, VoidDominionPattern.RESTORE_START_TICK), 16.0F, 9.0F);
       } else {
          float restore = FxMath.window(t, VoidDominionPattern.RESTORE_START_TICK, VoidDominionPattern.TOTAL_LIFETIME);
-         mosaic = restore < 0.28F ? 16.0F : (restore < 0.55F ? 8.0F : (restore < 0.8F ? 4.0F : 1.0F));
+         glitchBlock = restore < 0.28F ? 16.0F : (restore < 0.55F ? 8.0F : (restore < 0.8F ? 4.0F : 1.0F));
       }
       float fineGrid = present * (0.22F + 0.18F * FxMath.window(t, 0.0F, 8.0F));
       float mainGrid = present * (0.24F + 0.25F * FxMath.window(t, 2.0F, 14.0F));
-      float desaturate = t < VoidDominionPattern.RESTORE_START_TICK ? 0.96F : 1.0F - FxMath.window(t, VoidDominionPattern.RESTORE_START_TICK, VoidDominionPattern.TOTAL_LIFETIME);
+      float desaturate = t < VoidDominionPattern.RESTORE_START_TICK ? 0.42F : 1.0F - FxMath.window(t, VoidDominionPattern.RESTORE_START_TICK, VoidDominionPattern.TOTAL_LIFETIME);
       float invert = 0.86F * FxMath.window(t, 54.0F, 54.6F) * (1.0F - FxMath.window(t, 56.0F, 58.0F));
       float restoreFront = t < VoidDominionPattern.RESTORE_START_TICK ? 0.0F : this.restoreRadius(t);
       float glitch = t >= VoidDominionPattern.SWEEP_START_TICK && t <= VoidDominionPattern.SWEEP_END_TICK ? 0.72F : 0.0F;
       float phase = t < 14.0F ? 0.0F : t < 26.0F ? 1.0F : t < 54.0F ? 2.0F : t < 68.0F ? 3.0F : 4.0F;
       Vector4fData data = new Vector4fData(
-         center, radius, present, mosaic, front, 0.62F, fineGrid, mainGrid, desaturate, invert,
+         center, sceneRadius, present, glitchBlock, front, 0.62F, fineGrid, mainGrid, desaturate, invert,
          (float)(frame.camera.x - Math.floor(frame.camera.x)), (float)(frame.camera.y - Math.floor(frame.camera.y)),
          (float)(frame.camera.z - Math.floor(frame.camera.z)), this.radius, 1.0F, glitch, restoreFront, phase
       );
       if (FxShaders.eraseScene != null) {
          out.add(new FxPass(FxPass.Kind.SCENE, () -> FxShaders.eraseScene, shader -> {
             shader.safeGetUniform("Dome").set(data.center.x, data.center.y, data.center.z, data.radius);
-            shader.safeGetUniform("Erase").set(data.presence, data.mosaic, data.front, data.frontWidth);
+            shader.safeGetUniform("Erase").set(data.presence, data.glitchBlock, data.front, data.frontWidth);
             shader.safeGetUniform("Grid").set(data.fineGrid, data.mainGrid, data.desaturate, data.invert);
             shader.safeGetUniform("CamFract").set(data.camX, data.camY, data.camZ, data.baseRadius);
             shader.safeGetUniform("Extra").set(data.wipedStrength, data.glitch, data.restoreRadius, data.phase);
@@ -765,7 +769,7 @@ public final class VoidDominionFx extends FxInstance {
          float volumeStrength = present * (t >= VoidDominionPattern.RESTORE_START_TICK ? 0.18F : 1.0F);
          float age = t;
          out.add(new FxPass(FxPass.Kind.VOLUME, () -> FxShaders.eraseVolume, shader -> {
-            shader.safeGetUniform("Dome").set(data.center.x, data.center.y, data.center.z, Math.max(0.01F, data.radius));
+            shader.safeGetUniform("Dome").set(data.center.x, data.center.y, data.center.z, Math.max(0.01F, radius));
             shader.safeGetUniform("Erase").set(data.presence, data.front, 0.48F, volumeStrength);
             shader.safeGetUniform("Phase").set(age, collapse, volumeStrength, zeroSnap);
             shader.safeGetUniform("Extra").set(data.baseRadius, restoreFront, this.scale, this.radius);
@@ -783,7 +787,7 @@ public final class VoidDominionFx extends FxInstance {
       }
       float inside = 1.0F - FxMath.window(distance, this.radius - 2.0F, this.radius + 2.0F);
       if (inside > 0.0F && t < VoidDominionPattern.RESTORE_START_TICK) {
-         screen.addDesaturate(0.82F * inside * this.presence(t));
+          screen.addDesaturate(0.24F * inside * this.presence(t));
       }
       if (t < 3.0F) {
          screen.addFlash(0xFFFFFF, 0.24F * (1.0F - t / 3.0F) * attenuation, 0.32F);
@@ -879,7 +883,7 @@ public final class VoidDominionFx extends FxInstance {
       }
    }
 
-   private record Vector4fData(Vector3f center, float radius, float presence, float mosaic, float front, float frontWidth,
+   private record Vector4fData(Vector3f center, float radius, float presence, float glitchBlock, float front, float frontWidth,
                                float fineGrid, float mainGrid, float desaturate, float invert, float camX, float camY, float camZ,
                                float baseRadius, float wipedStrength, float glitch, float restoreRadius, float phase) {
    }

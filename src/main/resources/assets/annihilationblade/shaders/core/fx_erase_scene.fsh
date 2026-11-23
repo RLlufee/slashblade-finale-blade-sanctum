@@ -11,7 +11,7 @@ uniform mat4 InvView;
 uniform vec2 OutSize;
 uniform float FxTime;
 uniform vec4 Dome;    // xyz = 穹顶中心（相对相机），w = 当前穹顶半径
-uniform vec4 Erase;   // x = 强度，y = 马赛克块像素，z = 波前半径，w = 波前宽度
+uniform vec4 Erase;   // x = 强度，y = 局部故障像素，z = 波前半径，w = 波前宽度
 uniform vec4 Grid;    // x = 一格细网，y = 四格主网，z = 去色，w = 反相强度
 uniform vec4 CamFract;// xyz = 相机坐标小数部分，w = 原始穹顶半径
 uniform vec4 Extra;   // x = 已卸载强度，y = 故障强度，z = 重绘波前半径，w = 阶段编号
@@ -24,7 +24,12 @@ void main() {
     float depth = texture(Sampler1, texCoord).r;
     float sceneT = fxSceneDistance(depth, texCoord, InvProj);
     vec3 p = rd * min(sceneT, 1.0e4);
-    vec3 normal = normalize(cross(dFdx(p), dFdy(p)) + vec3(0.0, 1.0e-6, 0.0));
+    vec3 dpdx = dFdx(p);
+    vec3 dpdy = dFdy(p);
+    float derivativeSpan = max(length(dpdx), length(dpdy));
+    float normalValid = step(sceneT, 1.0e5) * step(derivativeSpan, max(sceneT * 0.35, 0.2));
+    vec3 gradientNormal = normalize(cross(dpdx, dpdy) + vec3(0.0, 1.0e-6, 0.0));
+    vec3 normal = mix(vec3(0.0, 1.0, 0.0), gradientNormal, normalValid);
     vec3 world = p + CamFract.xyz;
 
     // 导数相关网格在所有像素路径上统一求值，避免分支内导数造成远景闪烁。
@@ -50,10 +55,9 @@ void main() {
     }
 
     float block = max(Erase.y, 1.0);
-    vec2 cellUv = (floor(texCoord * OutSize / block) + 0.5) * block / OutSize;
-    vec3 mosaic = mix(base, texture(Sampler0, cellUv).rgb, step(1.5, block));
-    float luma = dot(mosaic, vec3(0.299, 0.587, 0.114));
-    vec3 formatted = mix(mosaic, vec3(luma), clamp(Grid.z, 0.0, 1.0));
+    float luma = dot(base, vec3(0.299, 0.587, 0.114));
+    vec3 coolGrey = vec3(luma) * vec3(0.94, 0.98, 1.04);
+    vec3 formatted = mix(base, coolGrey, clamp(Grid.z, 0.0, 1.0));
 
     float distanceToCenter = surfaceInside > 0.5 ? distToCenter : length(Dome.xyz - rd * dot(Dome.xyz, rd));
     float wiped = 0.0;
@@ -77,7 +81,9 @@ void main() {
         float stripHash = fxHash11(floor(gl_FragCoord.y / 3.0) + floor(FxTime * 18.0));
         float strip = step(0.82, stripHash) * shell * Extra.y;
         float shift = (stripHash - 0.5) * 0.006 * Extra.y;
-        vec3 torn = texture(Sampler0, clamp(texCoord + vec2(shift, 0.0), vec2(0.0), vec2(1.0))).rgb;
+        vec2 glitchUv = clamp(texCoord + vec2(shift, 0.0), vec2(0.0), vec2(1.0));
+        glitchUv = (floor(glitchUv * OutSize / block) + 0.5) * block / OutSize;
+        vec3 torn = texture(Sampler0, clamp(glitchUv, vec2(0.0), vec2(1.0))).rgb;
         color = mix(color, vec3(dot(torn, vec3(0.299, 0.587, 0.114))), strip * 0.82);
         vec2 pixel = 1.0 / max(OutSize, vec2(1.0));
         vec3 fringe = vec3(
