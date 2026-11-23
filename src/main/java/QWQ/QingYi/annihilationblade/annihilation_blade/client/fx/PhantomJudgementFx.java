@@ -22,6 +22,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -57,9 +58,15 @@ public final class PhantomJudgementFx extends FxInstance {
    private static final int RECALL_OFFSET_FROM_DETONATE = PhantomJudgementPattern.RECALL_START_TICK - PhantomJudgementPattern.DETONATE_TICK;
 
    private static final int MAX_SLICES = 8;
-   private static final int MAX_TOTAL_SLASH_STRINGS = 120;
-   private static final int MAX_SPARKS = 140;
+   private static final int MAX_TOTAL_SLASH_STRINGS = 148;
+   private static final int MAX_SPARKS = 220;
    private static final int MAX_LOCK_SOUNDS = 6;
+   private static final int MAX_SILHOUETTES = 12;
+   private static final int MAX_DEATH_CRYSTALS = 92;
+   private static final int MAX_MIRROR_FRAGMENTS = 64;
+   private static final int SILHOUETTE_CHUNKS = 6;
+   /** 切屏停顿结束、开始合拢回弹的二段崩碎黄金拍点（与 collectPasses 7.5t 严格对齐）。 */
+   private static final float SECOND_WAVE_TICK = 7.5F;
 
    // ───────────────────────────── 色彩体系（黑曜暗底衬托三阶异色流，白天绝不糊白） ─────────────────────────────
    private static final float[] DEEP_OBSIDIAN = {0.07F, 0.018F, 0.16F};
@@ -92,9 +99,17 @@ public final class PhantomJudgementFx extends FxInstance {
    private final List<ShardUnit> shards = new ArrayList<>();
    private final List<SplitPulse> splitPulses = new ArrayList<>();
    private final List<SlashString> slashStrings = new ArrayList<>();
+   private final List<SlashString> echoStrings = new ArrayList<>();
    private final List<BurstArc> burstArcs = new ArrayList<>();
    private final List<ResonanceChord> resonanceChords = new ArrayList<>();
+   private final List<ShatteredSilhouette> silhouettes = new ArrayList<>();
+   private final List<DeathCrystal> deathCrystals = new ArrayList<>();
+   private final List<MirrorFragment> mirrorFragments = new ArrayList<>();
    private final List<Spark> sparks = new ArrayList<>();
+   private final Vector3f q0 = new Vector3f();
+   private final Vector3f q1 = new Vector3f();
+   private final Vector3f q2 = new Vector3f();
+   private final Vector3f q3 = new Vector3f();
 
    private int detonateAt = DEFAULT_DETONATE;
    private boolean detonated = false;
@@ -317,23 +332,40 @@ public final class PhantomJudgementFx extends FxInstance {
       this.detonateAt = tickNow;
       this.lifetime = tickNow + EPILOGUE_TICKS;
 
-      // 在目标被服务端移除前的这一瞬间，刷新所有存活目标的最终精确锚点
+      // 在目标被服务端移除前的这一瞬间，刷新所有存活目标的最终精确锚点并更新 3D 模型姿势快照
       if (finalTargetIds != null && finalTargetIds.length > 0) {
          for (int id : finalTargetIds) {
             Entity e = level.getEntity(id);
             if (e == null) {
                continue;
             }
-            boolean matched = false;
+            TargetAnchor matchedAnchor = null;
             for (TargetAnchor t : this.targets) {
                if (t.entityId == id) {
                   t.updateFromEntity(e);
-                  matched = true;
+                  matchedAnchor = t;
                   break;
                }
             }
-            if (!matched && this.targets.size() < 32) {
-               this.targets.add(new TargetAnchor(e.getId(), e.position(), Math.max(0.6F, e.getBbWidth()), Math.max(0.8F, e.getBbHeight()), 0.0F, this.random.nextDouble() * FxMath.TAU));
+            if (matchedAnchor == null && this.targets.size() < 32) {
+               matchedAnchor = new TargetAnchor(e.getId(), e.position(), Math.max(0.6F, e.getBbWidth()), Math.max(0.8F, e.getBbHeight()), 0.0F, this.random.nextDouble() * FxMath.TAU);
+               this.targets.add(matchedAnchor);
+            }
+            if (matchedAnchor != null && e instanceof LivingEntity living) {
+               float[] freshQuads = AfterimageCapture.captureLiving(living);
+               if (freshQuads != null) {
+                  matchedAnchor.capturedQuads = freshQuads;
+               }
+            }
+         }
+      }
+      // 对未被 finalTargetIds 覆盖但仍留在列表里的目标，若尚无剪影则补拍一次
+      for (int i = 0; i < Math.min(this.targets.size(), MAX_SILHOUETTES); i++) {
+         TargetAnchor t = this.targets.get(i);
+         if (t.capturedQuads == null && t.entityId >= 0) {
+            Entity e = level.getEntity(t.entityId);
+            if (e instanceof LivingEntity living) {
+               t.capturedQuads = AfterimageCapture.captureLiving(living);
             }
          }
       }
@@ -345,43 +377,60 @@ public final class PhantomJudgementFx extends FxInstance {
       }
    }
 
-   /** 为全部目标生成漫天立体「斩绝线网」、核心交叉 3D 刀弧、目标间共鸣连弦与晶爆火花。 */
+   /** 为全部目标生成漫天立体「斩绝线网」、二段回响斩线、3D 剪影碎块、慢动作晶刃、空间镜片、核心刀弧与双层星骸余烬。 */
    private void buildDetonationGeometry() {
       this.slashStrings.clear();
+      this.echoStrings.clear();
       this.burstArcs.clear();
       this.resonanceChords.clear();
+      this.silhouettes.clear();
+      this.deathCrystals.clear();
+      this.mirrorFragments.clear();
 
       int tCount = this.targets.size();
       int perTargetStrings;
+      int perTargetEchoStrings;
       int perTargetArcs;
+      int crystalsPerTarget;
+      int mirrorsPerTarget;
       if (tCount <= 3) {
          perTargetStrings = Math.min(14, this.stringsPerTarget + (tCount == 1 ? 2 : 0));
+         perTargetEchoStrings = tCount == 1 ? 8 : 6;
          perTargetArcs = 3;
+         crystalsPerTarget = tCount == 1 ? 16 : 12;
+         mirrorsPerTarget = tCount == 1 ? 10 : 7;
       } else if (tCount <= 10) {
          perTargetStrings = Math.min(8, this.stringsPerTarget);
+         perTargetEchoStrings = 4;
          perTargetArcs = 2;
+         crystalsPerTarget = 8;
+         mirrorsPerTarget = 5;
       } else {
          perTargetStrings = Math.min(5, this.stringsPerTarget);
+         perTargetEchoStrings = 3;
          perTargetArcs = 1;
+         crystalsPerTarget = 4;
+         mirrorsPerTarget = 3;
       }
       float bossBoost = tCount == 1 ? 1.42F : (tCount <= 3 ? 1.18F : 1.0F);
 
       int totalStrings = 0;
+      int totalEchoStrings = 0;
       for (int ti = 0; ti < tCount; ti++) {
          TargetAnchor t = this.targets.get(ti);
          float baseRadius = Math.max(2.6F, Math.max(t.width * 2.2F, t.height * 1.35F)) * this.scale * bossBoost;
 
+         // 1. 第一波主斩绝线（0t 齐爆，陪完 16t 切屏余韵）
          for (int k = 0; k < perTargetStrings && totalStrings < MAX_TOTAL_SLASH_STRINGS; k++) {
             boolean major = k < 2;
             Vector3f dir = FxMath.randomUnit(this.random);
-            // 避免斩线过于垂直或平行，拉出强烈对角交叉张力
             if (major && Math.abs(dir.y) > 0.85F) {
                dir.y *= 0.35F;
                dir.normalize();
             }
             Vector3f offset = FxMath.randomUnit(this.random).mul(baseRadius * (major ? 0.14F : 0.34F * this.random.nextFloat()));
             Vec3 mid = t.center.add(offset.x, offset.y * 0.65, offset.z);
-            float halfSpan = baseRadius * (major ? (1.28F + this.random.nextFloat() * 0.45F) : (0.78F + this.random.nextFloat() * 0.55F));
+            float halfSpan = baseRadius * (major ? (1.32F + this.random.nextFloat() * 0.48F) : (0.82F + this.random.nextFloat() * 0.56F));
             Vec3 span = new Vec3(dir.x, dir.y, dir.z).scale(halfSpan);
             float delay = major ? k * 0.45F : (0.5F + this.random.nextFloat() * 2.8F);
             float[] color = switch (k % 4) {
@@ -391,24 +440,83 @@ public final class PhantomJudgementFx extends FxInstance {
                default -> this.masterTint;
             };
             float slipSign = ((ti + k) & 1) == 0 ? 1.0F : -1.0F;
-            this.slashStrings.add(new SlashString(mid.subtract(span), mid.add(span), delay, major, slipSign, major ? 1.25F : 0.82F, color));
+            this.slashStrings.add(new SlashString(mid.subtract(span), mid.add(span), delay, major, slipSign, major ? 1.28F : 0.85F, color));
             totalStrings++;
          }
 
+         // 2. 第二波切屏合拢回响斩绝线（精确卡在 SECOND_WAVE_TICK = 7.5t 裂缝合拢回弹瞬间二次绞杀）
+         for (int k = 0; k < perTargetEchoStrings && totalEchoStrings < 72; k++) {
+            Vector3f dir = FxMath.randomUnit(this.random);
+            Vector3f offset = FxMath.randomUnit(this.random).mul(baseRadius * (0.20F + 0.35F * this.random.nextFloat()));
+            Vec3 mid = t.center.add(offset.x, offset.y * 0.60, offset.z);
+            float halfSpan = baseRadius * (0.95F + this.random.nextFloat() * 0.62F);
+            Vec3 span = new Vec3(dir.x, dir.y, dir.z).scale(halfSpan);
+            float delay = SECOND_WAVE_TICK + (ti % 4) * 0.25F + k * 0.42F;
+            float[] color = k % 3 == 0 ? GOLD : (k % 3 == 1 ? ICE_CYAN : MAGENTA);
+            this.echoStrings.add(new SlashString(mid.subtract(span), mid.add(span), delay, k == 0, k % 2 == 0 ? 1.0F : -1.0F, k == 0 ? 1.12F : 0.78F, color));
+            totalEchoStrings++;
+         }
+
+         // 3. 目标核心立体交叉 3D 曲面月牙刀弧（延至 16t）
          for (int aIdx = 0; aIdx < perTargetArcs; aIdx++) {
             Vector3f normal = FxMath.randomUnit(this.random);
             Vector3f u = FxMath.perpendicular(normal).normalize();
             Vector3f v = new Vector3f(normal).cross(u).normalize();
-            float outerR = baseRadius * (0.72F + this.random.nextFloat() * 0.38F);
-            float innerR = outerR * (0.64F + this.random.nextFloat() * 0.14F);
+            float outerR = baseRadius * (0.76F + this.random.nextFloat() * 0.40F);
+            float innerR = outerR * (0.62F + this.random.nextFloat() * 0.14F);
             float startAng = this.random.nextFloat() * FxMath.TAU;
-            float span = (float)(Math.PI * (0.95 + this.random.nextDouble() * 0.55));
+            float span = (float)(Math.PI * (1.02 + this.random.nextDouble() * 0.55));
             float[] col = aIdx == 0 ? ICE_CYAN : (aIdx == 1 ? this.masterTint : GOLD);
-            this.burstArcs.add(new BurstArc(t.center, u, v, innerR, outerR, startAng, startAng + span, aIdx * 0.85F, 12.0F, col));
+            this.burstArcs.add(new BurstArc(t.center, u, v, innerR, outerR, startAng, startAng + span, aIdx * 0.85F, 16.0F, col));
          }
 
-         // 晶爆星屑火花（总量严格封顶 MAX_SPARKS）
-         int sparkBudget = Math.max(4, Math.min(36, MAX_SPARKS / Math.max(1, tCount)));
+         // 4. 目标本体「千刃凌迟 · 6 块 3D 晶化剪影碎解」（最多前 MAX_SILHOUETTES 个目标）
+         if (this.silhouettes.size() < MAX_SILHOUETTES && t.capturedQuads != null && t.capturedQuads.length >= 12) {
+            this.silhouettes.add(new ShatteredSilhouette(t.feet, t.height, t.capturedQuads, this.random));
+         }
+
+         // 5. 目标原位真 3D 慢动作浮空晶化碎刃（两波弹出：初爆 + 7.5t 合拢回弹，强阻尼悬停慢漂至 32t）
+         for (int c = 0; c < crystalsPerTarget && this.deathCrystals.size() < MAX_DEATH_CRYSTALS; c++) {
+            boolean secondWave = c >= (crystalsPerTarget + 1) / 2;
+            Vector3f dir = FxMath.randomUnit(this.random);
+            dir.y = Math.abs(dir.y) * 0.72F + 0.12F;
+            dir.normalize();
+            float speed = (secondWave ? 0.36F : 0.48F) + this.random.nextFloat() * (secondWave ? 0.42F : 0.58F);
+            speed *= this.scale * Math.min(1.35F, bossBoost);
+            float len = (0.40F + this.random.nextFloat() * 0.34F) * this.scale * Math.min(1.25F, bossBoost);
+            float[] col = switch (c % 5) {
+               case 0 -> ICE_CYAN;
+               case 1 -> VIOLET;
+               case 2 -> GOLD;
+               case 3 -> MAGENTA;
+               default -> this.masterTint;
+            };
+            Vec3 origin = t.center.add(dir.x * 0.35, dir.y * 0.35, dir.z * 0.35);
+            int delayTick = secondWave ? 8 + (c % 3) : 1 + (c % 2);
+            this.deathCrystals.add(new DeathCrystal(
+               origin, dir.x * speed, dir.y * speed, dir.z * speed,
+               delayTick, 22 + this.random.nextInt(10), len, col,
+               this.random.nextFloat() * FxMath.TAU, (this.random.nextFloat() - 0.5F) * 0.28F
+            ));
+         }
+
+         // 6. 7.5t 切屏合拢瞬间的 3D 碎裂空间镜片（Body 暗紫面 + HDR 扫描线烧蚀溶解）
+         for (int m = 0; m < mirrorsPerTarget && this.mirrorFragments.size() < MAX_MIRROR_FRAGMENTS; m++) {
+            Vector3f outward = FxMath.randomUnit(this.random);
+            outward.y = Math.abs(outward.y) * 0.55F + 0.10F;
+            outward.normalize();
+            Vec3 pos = t.center.add(outward.x * baseRadius * 0.32, outward.y * baseRadius * 0.28, outward.z * baseRadius * 0.32);
+            Vector3f u = FxMath.randomUnit(this.random);
+            Vector3f v = FxMath.perpendicular(u).rotateAxis((float)(this.random.nextDouble() * 1.6 - 0.8), u.x, u.y, u.z).normalize();
+            float size = (0.34F + 0.36F * this.random.nextFloat()) * this.scale * Math.min(1.25F, bossBoost);
+            float speed = (0.28F + 0.42F * this.random.nextFloat()) * this.scale;
+            float spin = (this.random.nextFloat() - 0.5F) * 0.32F;
+            float[] col = m % 3 == 0 ? ICE_CYAN : (m % 3 == 1 ? VIOLET : GOLD);
+            this.mirrorFragments.add(new MirrorFragment(pos, outward, u, v, SECOND_WAVE_TICK + (m % 3) * 0.45F, size, speed, spin, col));
+         }
+
+         // 7. 双层星骸火花：高速晶爆射线 + 低速原位升腾星尘余烬（撑满 post = 0 ~ 38t 余韵）
+         int sparkBudget = Math.max(6, Math.min(48, MAX_SPARKS / Math.max(1, tCount)));
          for (int s = 0; s < sparkBudget && this.sparks.size() < MAX_SPARKS; s++) {
             float[] tint = switch (s % 5) {
                case 0 -> ICE_CYAN;
@@ -417,8 +525,18 @@ public final class PhantomJudgementFx extends FxInstance {
                case 3 -> MAGENTA;
                default -> WHITE;
             };
-            float spd = (0.48F + this.random.nextFloat() * 1.15F) * this.scale * bossBoost;
-            this.sparks.add(Spark.burst(t.center, this.random, spd, 14 + this.random.nextInt(14), tint, -0.008F));
+            boolean risingEmber = s >= sparkBudget / 2;
+            if (risingEmber) {
+               Vector3f dir = FxMath.randomUnit(this.random);
+               dir.y = Math.abs(dir.y) * 0.65F + 0.20F;
+               dir.normalize();
+               float spd = (0.14F + this.random.nextFloat() * 0.34F) * this.scale * Math.min(1.3F, bossBoost);
+               Vec3 start = t.center.add((this.random.nextDouble() - 0.5) * t.width * 1.4, (this.random.nextDouble() - 0.4) * t.height, (this.random.nextDouble() - 0.5) * t.width * 1.4);
+               this.sparks.add(new Spark(start, dir.mul(spd), 26 + this.random.nextInt(13), tint, 0.013F, 0.91));
+            } else {
+               float spd = (0.48F + this.random.nextFloat() * 1.15F) * this.scale * bossBoost;
+               this.sparks.add(Spark.burst(t.center, this.random, spd, 15 + this.random.nextInt(14), tint, -0.008F));
+            }
          }
       }
 
@@ -494,20 +612,29 @@ public final class PhantomJudgementFx extends FxInstance {
          }
       }
 
-      // 同步仍存活的目标坐标；目标若提前死亡则保持其最后有效星骸锚点
+      // 同步仍存活的目标坐标；在临界收弦期提前预拍 3D 姿势快照，防止目标提前死亡或网络抖动导致剪影落空
+      int ageNow = this.ageTicks();
       if (!this.detonated) {
+         boolean preCapture = ageNow == COMPRESS_START || ageNow == COMPRESS_START + 4;
+         int capCount = 0;
          for (TargetAnchor t : this.targets) {
             if (t.entityId >= 0) {
                Entity e = level.getEntity(t.entityId);
                if (e != null && e.isAlive()) {
                   t.updateFromEntity(e);
+                  if (preCapture && capCount < MAX_SILHOUETTES && e instanceof LivingEntity living) {
+                     float[] quads = AfterimageCapture.captureLiving(living);
+                     if (quads != null) {
+                        t.capturedQuads = quads;
+                     }
+                     capCount++;
+                  }
                }
             }
          }
          this.recomputeFocal();
       }
 
-      int ageNow = this.ageTicks();
       // 若服务端因网络抖动延迟了 UPDATE，达到共享 DETONATE_TICK 时客户端保底自行齐爆不卡死
       if (!this.detonated && this.cancelledAt < 0 && ageNow >= this.detonateAt) {
          this.triggerDetonate(level, ageNow, null, true);
@@ -538,7 +665,22 @@ public final class PhantomJudgementFx extends FxInstance {
          }
       }
 
-      // 更新动态晶爆火花
+      // 更新斩杀后慢动作浮空晶化碎刃
+      if (this.detonated && !this.deathCrystals.isEmpty()) {
+         int postTick = simTick - this.detonateAt;
+         Iterator<DeathCrystal> crystalIt = this.deathCrystals.iterator();
+         while (crystalIt.hasNext()) {
+            DeathCrystal c = crystalIt.next();
+            if (postTick >= c.delayTick) {
+               c.tick();
+               if (c.life <= 0) {
+                  crystalIt.remove();
+               }
+            }
+         }
+      }
+
+      // 更新动态晶爆火花与升腾星骸余烬
       Iterator<Spark> sparkIt = this.sparks.iterator();
       while (sparkIt.hasNext()) {
          Spark spark = sparkIt.next();
@@ -746,6 +888,18 @@ public final class PhantomJudgementFx extends FxInstance {
          play(level, this.focalAnchor, SoundEvents.AMETHYST_BLOCK_RESONATE, 1.75F, 1.98F);
       }
 
+      // 第四幕二段回响：切屏停顿结束合拢回弹（post = 8t）与裂缝完全合拢（post = 16t）的分拍余韵音效
+      if (this.detonated) {
+         int post = age - this.detonateAt;
+         if (post == 8) {
+            play(level, this.focalAnchor, SoundEvents.GLASS_BREAK, 1.35F, 1.32F);
+            play(level, this.focalAnchor, SoundEvents.AMETHYST_BLOCK_BREAK, 1.25F, 1.55F);
+            play(level, this.focalAnchor, SoundEvents.PLAYER_ATTACK_SWEEP, 0.95F, 1.42F);
+         } else if (post == 16) {
+            play(level, this.focalAnchor, SoundEvents.AMETHYST_BLOCK_CHIME, 0.85F, 1.68F);
+         }
+      }
+
       // 第五幕：百刃倒流归鞘风声与清灵三连晶石落位音
       int recallStart = this.detonateAt + RECALL_OFFSET_FROM_DETONATE;
       if (this.detonated && age == recallStart) {
@@ -896,12 +1050,16 @@ public final class PhantomJudgementFx extends FxInstance {
          }
       }
 
-      // 3. 第四幕：漫天立体「斩绝线」暗黑撕裂腔 + 核心交叉 3D 暗芯空间刀弧
+      // 3. 第四幕与斩杀后四重余威 Body 暗部层（覆盖至 post = 36t，彻底消除 16t 后的暗部断档）
       if (this.detonated) {
          float post = a - this.detonateAt;
-         if (post >= 0.0F && post < 16.0F) {
+         if (post >= 0.0F && post < 36.0F) {
             this.renderSlashStrings(b, frame, post, true);
             this.renderBurstArcs(b, frame, post, true);
+            this.renderShatteredSilhouettes(b, frame, post, true);
+            this.renderMirrorFragments(b, frame, post, a, true);
+            this.renderDeathCrystals(b, frame, post, a, true);
+            this.renderPostExecutionScars(b, frame, post, a, true);
          }
       }
    }
@@ -933,19 +1091,24 @@ public final class PhantomJudgementFx extends FxInstance {
          this.renderCageFormation(g, frame, a, overload);
       }
 
-      // 6. 第四幕：漫天立体斩绝线网 + 交叉 3D 月牙刀弧 + 共鸣斩弦 + 双层 3D 激波环 + 爆心十字星芒
+      // 6. 第四幕与斩杀后四重余威（0 ~ 38t 完整衔接 16t 切屏余韵与第五幕百刃归鞘）
       if (this.detonated) {
          float post = a - this.detonateAt;
-         if (post >= 0.0F && post < 22.0F) {
+         if (post >= 0.0F && post < 38.0F) {
             this.renderSlashStrings(g, frame, post, false);
             this.renderBurstArcs(g, frame, post, false);
             this.renderDetonationRingsAndChords(g, frame, post, a);
+            this.renderJudgementSequence(g, frame, post, a);
+            this.renderShatteredSilhouettes(g, frame, post, false);
+            this.renderMirrorFragments(g, frame, post, a, false);
+            this.renderDeathCrystals(g, frame, post, a, false);
+            this.renderPostExecutionScars(g, frame, post, a, false);
          }
          // 第五幕：百刃归鞘刀侧收束微环与归位星芒
          this.renderRecallAura(g, frame, a);
       }
 
-      // 7. 动态晶爆星屑火花
+      // 7. 动态晶爆星屑火花与原位升腾星骸余烬
       this.renderSparks(g, frame);
    }
 
@@ -1237,67 +1400,58 @@ public final class PhantomJudgementFx extends FxInstance {
       g.end();
    }
 
-   /** 第四幕核心奇观：漫天立体交错「斩绝线网」（Body 暗腔 + HDR 锯齿刃口 + 灼热极细白芯）。 */
+   /** 第四幕核心奇观：双波次漫天立体交错「斩绝线网」（第一波陪完 16t 切屏 + 7.5t 合拢二段回响斩线）。 */
    private void renderSlashStrings(FxGeometry geo, FxFrame frame, float post, boolean bodyPass) {
-      if (this.slashStrings.isEmpty()) {
+      if (this.slashStrings.isEmpty() && this.echoStrings.isEmpty()) {
          return;
       }
       if (bodyPass) {
          geo.begin(Style.VOID_SLIT, 1.0F, 0.0F, 0.58F, 0.68F, 1.0F, 0.0F);
-         for (SlashString line : this.slashStrings) {
-            float t = post - line.delay;
-            if (t < 0.0F || t >= 13.0F) {
-               continue;
-            }
-            float reveal = FxMath.easeOutCubic(FxMath.window(t, 0.0F, 1.4F));
-            float fade = 1.0F - FxMath.easeInCubic(FxMath.window(t, 4.5F, 13.0F));
-            if (fade <= 0.01F) {
-               continue;
-            }
-            Vec3 end = line.a.lerp(line.b, reveal);
-            this.drawSlitQuad(geo, frame, line.a, end, 0.28F * line.weight * this.scale * (0.5F + 0.5F * fade), DEEP_OBSIDIAN, fade * 0.92F);
-         }
+         this.drawSlashStringBatch(geo, frame, this.slashStrings, post, 18.0F, 8.0F, 0.30F, true, false);
+         this.drawSlashStringBatch(geo, frame, this.echoStrings, post, 15.0F, 5.5F, 0.24F, true, false);
          geo.end();
          return;
       }
 
-      // HDR 层 1：VOID_SLIT 锯齿亮刃与内星
-      geo.begin(Style.VOID_SLIT, 3.8F, 0.0F, 0.54F, 0.72F, 1.0F, 0.25F);
-      for (SlashString line : this.slashStrings) {
-         float t = post - line.delay;
-         if (t < 0.0F || t >= 13.5F) {
-            continue;
-         }
-         float reveal = FxMath.easeOutCubic(FxMath.window(t, 0.0F, 1.4F));
-         float fade = 1.0F - FxMath.easeInCubic(FxMath.window(t, 4.0F, 13.5F));
-         if (fade <= 0.01F) {
-            continue;
-         }
-         Vec3 end = line.a.lerp(line.b, reveal);
-         this.drawSlitQuad(geo, frame, line.a, end, 0.30F * line.weight * this.scale * (0.45F + 0.55F * fade), line.color, fade * 0.95F);
-      }
+      // HDR 层 1：VOID_SLIT 锯齿亮刃与内星（第一波延至 20t，二段回响线持续至 24t）
+      geo.begin(Style.VOID_SLIT, 3.8F, 0.0F, 0.54F, 0.72F, 1.0F, 0.28F);
+      this.drawSlashStringBatch(geo, frame, this.slashStrings, post, 20.0F, 8.5F, 0.32F, false, false);
+      this.drawSlashStringBatch(geo, frame, this.echoStrings, post, 16.5F, 6.0F, 0.26F, false, false);
 
       // HDR 层 2：极细锐纯白灼热斩绝核心丝线（一闪贯穿，凌厉极致）
       geo.begin(Style.RIBBON, 9.2F, 0.12F, 9.5F, 0.0F, 0.0F, 0.25F);
-      for (SlashString line : this.slashStrings) {
+      this.drawSlashStringBatch(geo, frame, this.slashStrings, post, 13.0F, 4.0F, 0.052F, false, true);
+      this.drawSlashStringBatch(geo, frame, this.echoStrings, post, 11.0F, 3.2F, 0.044F, false, true);
+      geo.end();
+   }
+
+   private void drawSlashStringBatch(
+      FxGeometry geo, FxFrame frame, List<SlashString> list, float post,
+      float maxLife, float fadeStart, float baseHalfWidth, boolean bodyPass, boolean coreRibbon
+   ) {
+      for (SlashString line : list) {
          float t = post - line.delay;
-         if (t < 0.0F || t >= 9.5F) {
+         if (t < 0.0F || t >= maxLife) {
             continue;
          }
-         float reveal = FxMath.easeOutCubic(FxMath.window(t, 0.0F, 1.2F));
-         float fade = 1.0F - FxMath.window(t, 2.2F, 9.5F);
+         float reveal = FxMath.easeOutCubic(FxMath.window(t, 0.0F, coreRibbon ? 1.2F : 1.4F));
+         float fade = 1.0F - FxMath.easeInCubic(FxMath.window(t, fadeStart, maxLife));
          if (fade <= 0.01F) {
             continue;
          }
          Vec3 end = line.a.lerp(line.b, reveal);
-         Vector3f pa = frame.rel(line.a);
-         Vector3f pb = frame.rel(end);
-         Vector3f mid = new Vector3f(pa).add(pb).mul(0.5F);
-         float nf = 0.28F + 0.72F * nearFade(mid);
-         float w = (line.major ? 0.052F : 0.032F) * this.scale * (0.35F + 0.65F * fade);
-         geo.ribbon(List.of(pa, mid, pb), new float[]{w * 0.12F, w, w * 0.12F}, new float[]{0.15F * fade * nf, fade * nf, 0.15F * fade * nf}, WHITE[0], WHITE[1], WHITE[2]);
+         if (coreRibbon) {
+            Vector3f pa = frame.rel(line.a);
+            Vector3f pb = frame.rel(end);
+            Vector3f mid = new Vector3f(pa).add(pb).mul(0.5F);
+            float nf = 0.28F + 0.72F * nearFade(mid);
+            float w = (line.major ? baseHalfWidth : baseHalfWidth * 0.64F) * this.scale * (0.35F + 0.65F * fade);
+            geo.ribbon(List.of(pa, mid, pb), new float[]{w * 0.12F, w, w * 0.12F}, new float[]{0.15F * fade * nf, fade * nf, 0.15F * fade * nf}, WHITE[0], WHITE[1], WHITE[2]);
+         } else {
+            float[] col = bodyPass ? DEEP_OBSIDIAN : line.color;
+            this.drawSlitQuad(geo, frame, line.a, end, baseHalfWidth * line.weight * this.scale * (0.45F + 0.55F * fade), col, fade * (bodyPass ? 0.92F : 0.95F));
+         }
       }
-      geo.end();
    }
 
    /** 第四幕：目标核心立体交叉 3D 曲面月牙刀弧（Body 暗黑切口 + HDR 高光锋刃）。 */
@@ -1386,6 +1540,365 @@ public final class PhantomJudgementFx extends FxInstance {
             g.billboard(tc, sz * 0.85F, 1.5707964F, ICE_CYAN[0], ICE_CYAN[1], ICE_CYAN[2], al * 0.82F);
          }
          g.end();
+      }
+   }
+
+   /**
+    * 逐目标独立可读的「双拍判决锁环与二段绞杀闪印」（刻意避开 0~1.8t 反相帧，并在 7.5t 切屏合拢时引爆二段脉冲）。
+    */
+   private void renderJudgementSequence(FxGeometry g, FxFrame frame, float post, float a) {
+      int targetLimit = Math.min(this.targets.size(), 16);
+      if (targetLimit == 0 || post < 1.6F || post >= 17.5F) {
+         return;
+      }
+
+      // 1. 双层交叉判决锁环（1.8 ~ 14t：反相定格结束后清晰展开定界，7.5t 切屏合拢瞬间猛然二次收紧增亮）
+      g.begin(Style.RIBBON, 5.4F, 0.14F, 7.2F, 0.0F, 0.0F, 0.42F);
+      for (int i = 0; i < targetLimit; i++) {
+         TargetAnchor target = this.targets.get(i);
+         float local = post - 1.8F - Math.min(i, 15) * 0.22F;
+         if (local < 0.0F || local >= 12.0F) {
+            continue;
+         }
+         float fadeIn = FxMath.easeOutCubic(FxMath.window(local, 0.0F, 1.2F));
+         float fadeOut = 1.0F - FxMath.easeInCubic(FxMath.window(local, 6.8F, 12.0F));
+         Vector3f center = frame.rel(target.center);
+         float alpha = fadeIn * fadeOut * nearFade(center);
+         if (alpha <= 0.01F) {
+            continue;
+         }
+         float squeeze1 = FxMath.easeOutCubic(FxMath.window(local, 0.0F, 3.6F));
+         float squeeze2 = FxMath.easeInCubic(FxMath.window(post, SECOND_WAVE_TICK, SECOND_WAVE_TICK + 4.5F));
+         float radius = Math.max(0.95F, target.height * 0.78F) * this.scale * (1.62F - 0.52F * squeeze1 - 0.36F * squeeze2);
+         float phase = (float)target.yawOffset + i * 0.71F;
+         g.torus(center, new Vector3f(0.0F, 1.0F, 0.0F), radius, (0.048F + 0.022F * squeeze2) * this.scale, 24, 4, phase + a * 0.16F,
+            ICE_CYAN[0], ICE_CYAN[1], ICE_CYAN[2], alpha * 0.92F);
+         g.torus(center, new Vector3f(0.36F, 0.85F, 0.38F).normalize(), radius * 0.86F, 0.038F * this.scale, 22, 4, -phase - a * 0.22F,
+            GOLD[0], GOLD[1], GOLD[2], alpha * 0.78F);
+      }
+
+      // 2. 7.5t 切屏合拢瞬间的「二段终判十字星闪」（在裂缝收束的黄金拍点给每个目标补一道极锐三维交叉闪印）
+      if (post >= SECOND_WAVE_TICK - 0.2F && post < SECOND_WAVE_TICK + 8.0F) {
+         g.begin(Style.RIBBON, 8.6F, 0.1F, 8.8F, 0.0F, 0.0F, 0.28F);
+         for (int i = 0; i < targetLimit; i++) {
+            TargetAnchor target = this.targets.get(i);
+            float local = post - SECOND_WAVE_TICK - Math.min(i, 12) * 0.20F;
+            if (local < 0.0F || local >= 5.5F) {
+               continue;
+            }
+            float strikeIn = FxMath.easeOutCubic(FxMath.window(local, 0.0F, 0.85F));
+            float strikeOut = 1.0F - FxMath.easeInCubic(FxMath.window(local, 1.6F, 5.5F));
+            Vector3f center = frame.rel(target.center);
+            float hit = strikeIn * strikeOut * nearFade(center);
+            if (hit <= 0.01F) {
+               continue;
+            }
+            float yaw = (float)target.yawOffset + i * 0.9F;
+            Vector3f axA = new Vector3f((float)Math.cos(yaw), 0.55F, (float)Math.sin(yaw)).normalize();
+            Vector3f axB = new Vector3f((float)-Math.sin(yaw), 0.55F, (float)Math.cos(yaw)).normalize();
+            float span = Math.max(1.55F, target.height * 1.18F) * this.scale * (0.65F + 0.55F * strikeIn);
+            axA.mul(span);
+            axB.mul(span);
+            g.ribbon(List.of(new Vector3f(center).sub(axA), new Vector3f(center), new Vector3f(center).add(axA)),
+               new float[]{0.012F * this.scale, 0.072F * this.scale, 0.012F * this.scale}, new float[]{hit * 0.16F, hit, hit * 0.16F},
+               WHITE[0], WHITE[1], WHITE[2]);
+            g.ribbon(List.of(new Vector3f(center).sub(axB), new Vector3f(center), new Vector3f(center).add(axB)),
+               new float[]{0.010F * this.scale, 0.056F * this.scale, 0.010F * this.scale}, new float[]{hit * 0.14F, hit * 0.85F, hit * 0.14F},
+               ICE_CYAN[0], ICE_CYAN[1], ICE_CYAN[2]);
+            Vector3f vert = new Vector3f(0.0F, span * 0.88F, 0.0F);
+            g.ribbon(List.of(new Vector3f(center).add(vert), new Vector3f(center), new Vector3f(center).sub(vert)),
+               new float[]{0.008F * this.scale, 0.044F * this.scale, 0.008F * this.scale}, new float[]{hit * 0.12F, hit * 0.72F, hit * 0.12F},
+               GOLD[0], GOLD[1], GOLD[2]);
+         }
+
+         // 7.5t 合拢瞬间的紧凑紫金二次爆心星芒
+         g.begin(Style.GLOW, 7.2F, 0.15F, 6.5F, 2.8F, 1.4F, 0.0F);
+         for (int i = 0; i < Math.min(targetLimit, 10); i++) {
+            TargetAnchor target = this.targets.get(i);
+            float local = post - SECOND_WAVE_TICK - Math.min(i, 10) * 0.20F;
+            if (local < 0.0F || local >= 5.0F) {
+               continue;
+            }
+            float k = 1.0F - local / 5.0F;
+            Vector3f tc = frame.rel(target.center);
+            float sz = Math.max(1.0F, target.height * 0.88F) * this.scale * (0.55F + 0.65F * (1.0F - k));
+            float al = k * k * nearFade(tc);
+            g.billboard(tc, sz, 0.7854F, GOLD[0], GOLD[1], GOLD[2], al * 0.85F);
+            g.billboard(tc, sz * 0.62F, 0.0F, WHITE[0], WHITE[1], WHITE[2], al * 0.90F);
+         }
+      }
+      g.end();
+   }
+
+   /**
+    * 第一重余威：目标本体「千刃凌迟 · 6 块 3D 晶化剪影碎解」（0 ~ 24t）。
+    * 与断空的「一刀两断」刻意区分：按空间象限把目标拆为 6 大块立体碎块，
+    * 0~2.4t 白热定格 → 2.4~7.5t 悬空微裂 → 7.5t 切屏合拢冲击下二次崩离并在 9.5~24t 烧蚀消散。
+    */
+   private void renderShatteredSilhouettes(FxGeometry geo, FxFrame frame, float post, boolean bodyPass) {
+      if (this.silhouettes.isEmpty() || post < 0.0F || post >= 24.0F) {
+         return;
+      }
+      float dissolve = FxMath.window(post, 9.5F, 24.0F);
+      if (dissolve >= 0.995F) {
+         return;
+      }
+      // 两段式立体错开距离：第一段（2.0~7.5t）在切屏停顿期悬空微裂，第二段（7.5~24t）合拢后加速崩离上浮
+      float split1 = FxMath.easeOutCubic(FxMath.window(post, 2.0F, SECOND_WAVE_TICK));
+      float split2 = FxMath.easeOutCubic(FxMath.window(post, SECOND_WAVE_TICK, 21.0F));
+      float spread = (0.34F * split1 + 1.15F * split2) * this.scale;
+      float lift = (0.08F * split1 + 0.42F * split2) * this.scale;
+
+      if (bodyPass) {
+         float alpha = (1.0F - FxMath.window(post, 15.0F, 24.0F)) * 0.86F;
+         if (alpha <= 0.01F) {
+            return;
+         }
+         geo.begin(Style.AFTERIMAGE, 0.78F, 0.1F, 1.0F, 0.12F, 0.0F, dissolve);
+         for (ShatteredSilhouette sil : this.silhouettes) {
+            this.drawSilhouette(geo, frame, sil, spread, lift, alpha, DEEP_OBSIDIAN, DEEP_VOID, true);
+         }
+         geo.end();
+         return;
+      }
+
+      // 0 ~ 2.6t：斩杀瞬间整具目标白热晶化定格闪烁
+      if (post < 2.6F) {
+         float flash = 1.0F - FxMath.window(post, 0.7F, 2.6F);
+         if (flash > 0.01F) {
+            geo.begin(Style.AFTERIMAGE, 7.2F, 0.1F, 1.35F, 0.55F, 0.0F, 0.0F);
+            for (ShatteredSilhouette sil : this.silhouettes) {
+               this.drawSilhouette(geo, frame, sil, spread * 0.35F, lift * 0.35F, flash, WHITE, ICE_CYAN, false);
+            }
+         }
+      }
+
+      // 1.4 ~ 24t：6 块晶化碎块沿流场烧蚀白热前沿逐块消散（7.5t 合拢瞬间高亮闪耀一次）
+      float echoFlash = post >= SECOND_WAVE_TICK && post < SECOND_WAVE_TICK + 4.0F
+         ? (1.0F - (post - SECOND_WAVE_TICK) / 4.0F) * 2.2F
+         : 0.0F;
+      float alpha = FxMath.easeOutCubic(FxMath.window(post, 1.2F, 3.0F)) * (1.0F - FxMath.window(post, 19.0F, 24.0F));
+      if (alpha > 0.01F) {
+         geo.begin(Style.AFTERIMAGE, 2.8F + echoFlash + 1.1F * dissolve, 0.1F, 1.15F, 0.10F, 3.6F, dissolve);
+         for (ShatteredSilhouette sil : this.silhouettes) {
+            this.drawSilhouette(geo, frame, sil, spread, lift, alpha * 0.92F, ICE_CYAN, VIOLET, false);
+         }
+      }
+      geo.end();
+   }
+
+   private void drawSilhouette(
+      FxGeometry g, FxFrame frame, ShatteredSilhouette sil,
+      float spread, float lift, float alpha, float[] topCol, float[] bottomCol, boolean bodyPass
+   ) {
+      Vector3f base = frame.rel(sil.feet);
+      float fade = alpha * nearFade(new Vector3f(base).add(0.0F, sil.height * 0.5F, 0.0F));
+      if (fade <= 0.01F) {
+         return;
+      }
+      float[] quads = sil.quads;
+      float invH = 1.0F / Math.max(0.45F, sil.height);
+      for (int i = 0, face = 0; i + 11 < quads.length; i += 12, face++) {
+         int chunk = sil.faceChunk[face];
+         Vector3f dir = sil.chunkDir[chunk];
+         float scaleChunk = sil.chunkSpeed[chunk];
+         float ox = dir.x * spread * scaleChunk;
+         float oy = dir.y * spread * scaleChunk + lift * (0.65F + 0.35F * (chunk & 1));
+         float oz = dir.z * spread * scaleChunk;
+         this.q0.set(base.x + quads[i] + ox, base.y + quads[i + 1] + oy, base.z + quads[i + 2] + oz);
+         this.q1.set(base.x + quads[i + 3] + ox, base.y + quads[i + 4] + oy, base.z + quads[i + 5] + oz);
+         this.q2.set(base.x + quads[i + 6] + ox, base.y + quads[i + 7] + oy, base.z + quads[i + 8] + oz);
+         this.q3.set(base.x + quads[i + 9] + ox, base.y + quads[i + 10] + oy, base.z + quads[i + 11] + oz);
+         if (bodyPass) {
+            g.rawQuad(this.q0, this.q1, this.q2, this.q3, topCol[0], topCol[1], topCol[2], fade);
+         } else {
+            float k = FxMath.clamp01((quads[i + 1] + quads[i + 4] + quads[i + 7] + quads[i + 10]) * 0.25F * invH);
+            g.rawQuad(
+               this.q0, this.q1, this.q2, this.q3,
+               FxMath.lerp(bottomCol[0], topCol[0], k),
+               FxMath.lerp(bottomCol[1], topCol[1], k),
+               FxMath.lerp(bottomCol[2], topCol[2], k),
+               fade
+            );
+         }
+      }
+   }
+
+   /**
+    * 第二重余威：7.5t 切屏合拢瞬间的 3D 碎裂空间镜片（Body 暗紫面 + HDR 扫描线烧蚀，持续至 25t）。
+    */
+   private void renderMirrorFragments(FxGeometry geo, FxFrame frame, float post, float a, boolean bodyPass) {
+      if (this.mirrorFragments.isEmpty() || post < SECOND_WAVE_TICK || post >= 25.5F) {
+         return;
+      }
+      float dissolve = FxMath.window(post, 15.0F, 25.5F);
+      if (dissolve >= 0.995F) {
+         return;
+      }
+      if (bodyPass) {
+         geo.begin(Style.AFTERIMAGE, 0.72F, 0.1F, 1.0F, 0.65F, 0.0F, dissolve);
+      } else {
+         geo.begin(Style.AFTERIMAGE, 3.2F + 1.4F * dissolve, 0.1F, 1.35F, 0.14F, 4.2F, dissolve);
+      }
+      Vector3f uRot = new Vector3f();
+      Vector3f vRot = new Vector3f();
+      Vector3f v0 = new Vector3f();
+      Vector3f v1 = new Vector3f();
+      Vector3f v2 = new Vector3f();
+      Vector3f v3 = new Vector3f();
+      for (MirrorFragment mf : this.mirrorFragments) {
+         float t = post - mf.spawn;
+         if (t < 0.0F) {
+            continue;
+         }
+         float appear = FxMath.easeOutCubic(FxMath.window(t, 0.0F, 1.5F));
+         float fade = appear * (1.0F - FxMath.window(post, 20.5F, 25.5F));
+         if (fade <= 0.01F) {
+            continue;
+         }
+         // 爆炸初段弹出后迅速减速转入慢动作翻转浮升
+         float travel = (float)(mf.speed * (1.0 - Math.exp(-t * 0.24)) * 3.8);
+         Vec3 posW = mf.origin.add(mf.outward.x * travel, mf.outward.y * travel + t * 0.025 * this.scale, mf.outward.z * travel);
+         Vector3f c = frame.rel(posW);
+         float nf = nearFade(c);
+         if (nf <= 0.01F) {
+            continue;
+         }
+         float angle = t * mf.spin + a * 0.04F;
+         float cs = (float)Math.cos(angle);
+         float sn = (float)Math.sin(angle);
+         float s = mf.size * (0.65F + 0.35F * appear);
+         uRot.set(mf.axisU).mul(cs).fma(sn, mf.axisV).mul(s);
+         vRot.set(mf.axisV).mul(cs).fma(-sn, mf.axisU).mul(s * 0.62F);
+         v0.set(c).add(uRot);
+         v1.set(c).add(vRot);
+         v2.set(c).sub(uRot);
+         v3.set(c).sub(vRot);
+         float[] col = bodyPass ? DEEP_OBSIDIAN : mf.color;
+         geo.rawQuad(v0, v1, v2, v3, col[0], col[1], col[2], fade * (bodyPass ? 0.82F : 0.92F) * nf);
+      }
+      geo.end();
+   }
+
+   /**
+    * 第三重余威 A：目标原位真 3D 慢动作浮空晶化碎刃（Body 玄黑晶核 + HDR 锋刃，持续飘旋并溶解至 32t）。
+    */
+   private void renderDeathCrystals(FxGeometry geo, FxFrame frame, float post, float a, boolean bodyPass) {
+      if (this.deathCrystals.isEmpty() || post < 0.8F || post >= 35.5F) {
+         return;
+      }
+      float dissolve = FxMath.window(post, 20.0F, 35.0F);
+      if (dissolve >= 0.995F) {
+         return;
+      }
+      if (bodyPass) {
+         geo.begin(Style.CRYSTAL_SHARD, 0.88F, 0.12F, 2.2F, 1.4F, 0.35F, dissolve);
+      } else {
+         geo.begin(Style.CRYSTAL_SHARD, 2.55F + 1.25F * dissolve, 0.12F, 2.4F, 2.0F, 0.45F, dissolve);
+      }
+      Vector3f forward = new Vector3f();
+      Vector3f right = new Vector3f();
+      Vector3f up = new Vector3f();
+      Vector3f tmpRef = new Vector3f();
+      for (DeathCrystal c : this.deathCrystals) {
+         if (post < c.delayTick) {
+            continue;
+         }
+         float lifeRatio = (float)c.life / c.maxLife;
+         float appear = FxMath.easeOutCubic(FxMath.window(post - c.delayTick, 0.0F, 1.6F));
+         float alpha = appear * (float)Math.pow(lifeRatio, 0.65);
+         if (alpha <= 0.01F) {
+            continue;
+         }
+         Vec3 p = c.position(frame.partialTick);
+         Vector3f rel = frame.rel(p);
+         float nf = nearFade(rel);
+         if (nf <= 0.01F) {
+            continue;
+         }
+         float spin = c.phase + a * c.spinSpeed;
+         float pitch = c.phase * 0.7F + a * c.spinSpeed * 0.65F;
+         forward.set(
+            (float)(Math.cos(spin) * Math.cos(pitch)),
+            (float)Math.sin(pitch),
+            (float)(Math.sin(spin) * Math.cos(pitch))
+         ).normalize();
+         tmpRef.set(Math.abs(forward.y) > 0.9F ? 1.0F : 0.0F, Math.abs(forward.y) > 0.9F ? 0.0F : 1.0F, 0.0F);
+         right.set(forward).cross(tmpRef).normalize();
+         up.set(right).cross(forward).normalize();
+         float sz = c.size * (0.65F + 0.35F * lifeRatio);
+         float[] col = bodyPass ? DEEP_OBSIDIAN : c.color;
+         geo.bladeShard(rel, forward, right, up, sz, sz * 0.52F, sz * 0.25F, sz * 0.13F, col[0], col[1], col[2], alpha * nf);
+      }
+      geo.end();
+   }
+
+   /**
+    * 第三重余威 B：目标原位「审判星痕烙印」与「立式虚空残缝」（持续燃烧并优雅闭合至 post = 35t）。
+    */
+   private void renderPostExecutionScars(FxGeometry geo, FxFrame frame, float post, float a, boolean bodyPass) {
+      if (post < 2.0F || post >= 35.5F) {
+         return;
+      }
+      int limit = Math.min(this.targets.size(), 16);
+
+      // 1. 目标原位立式虚空残缝（Body 暗腔 + HDR 冰青/紫锯齿直刃裂缝，4 ~ 35t 缓缓闭合归寂）
+      if (post >= 3.5F && post < 35.5F) {
+         float slitOpen = FxMath.easeOutCubic(FxMath.window(post, 3.5F, 7.5F)) * (1.0F - FxMath.easeInCubic(FxMath.window(post, 19.0F, 35.5F)));
+         if (slitOpen > 0.01F) {
+            if (bodyPass) {
+               geo.begin(Style.VOID_SLIT, 1.0F, 0.0F, slitOpen * 0.56F, 0.65F, 1.0F, 0.0F);
+            } else {
+               geo.begin(Style.VOID_SLIT, 3.8F * slitOpen + 1.2F, 0.0F, slitOpen * 0.52F, 0.68F, 1.0F, 0.42F);
+            }
+            for (int i = 0; i < limit; i++) {
+               TargetAnchor t = this.targets.get(i);
+               float halfH = Math.max(1.35F, t.height * 0.92F) * this.scale;
+               float tiltX = (float)Math.cos(t.yawOffset) * halfH * 0.24F;
+               float tiltZ = (float)Math.sin(t.yawOffset) * halfH * 0.24F;
+               Vec3 bottom = t.center.add(-tiltX, -halfH, -tiltZ);
+               Vec3 top = t.center.add(tiltX, halfH, tiltZ);
+               float halfW = (0.36F + 0.16F * slitOpen) * this.scale;
+               float[] col = bodyPass ? DEEP_OBSIDIAN : (i % 2 == 0 ? ICE_CYAN : VIOLET);
+               this.drawSlitQuad(geo, frame, bottom, top, halfW, col, slitOpen * (bodyPass ? 0.90F : 0.95F));
+            }
+            geo.end();
+         }
+      }
+
+      if (bodyPass) {
+         return;
+      }
+
+      // 2. 目标脚下灼烧余燃的审判六芒星印（2 ~ 34t）+ 7.5t 合拢回弹扩散残环
+      float runeFade = FxMath.easeOutCubic(FxMath.window(post, 2.0F, 5.0F)) * (1.0F - FxMath.easeInCubic(FxMath.window(post, 18.0F, 34.0F)));
+      if (runeFade > 0.01F) {
+         float pulse = 0.82F + 0.18F * (float)Math.sin(a * 0.42F);
+         geo.begin(Style.RUNE, 2.4F * runeFade * pulse, 0.0F, a * 0.035F, this.seedFloat + 37.0F, 0.0F, 1.0F);
+         for (int i = 0; i < limit; i++) {
+            TargetAnchor t = this.targets.get(i);
+            float r = (float)PhantomJudgementPattern.cageRadius(t.width, t.height, 0, this.scale) * (0.96F + 0.18F * (1.0F - runeFade));
+            Vector3f foot = frame.rel(t.feet.add(0.0, 0.06, 0.0));
+            float[] col = i % 2 == 0 ? GOLD : this.masterTint;
+            geo.quad(foot, new Vector3f(r, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, r), col[0], col[1], col[2], runeFade * 0.78F * nearFade(foot));
+         }
+         geo.end();
+      }
+
+      // 3. 7.5t 切屏合拢瞬间的地面二次扩散残环（7.5 ~ 23t）
+      if (post >= SECOND_WAVE_TICK && post < SECOND_WAVE_TICK + 15.5F) {
+         float p = (post - SECOND_WAVE_TICK) / 15.5F;
+         float ease = FxMath.easeOutCubic(p);
+         float fade = (1.0F - p) * (1.0F - p * 0.35F);
+         geo.begin(Style.RING, 3.6F * fade, 0.0F, 0.94F, 0.028F, 18.0F, -0.45F);
+         for (int i = 0; i < Math.min(limit, 12); i++) {
+            TargetAnchor t = this.targets.get(i);
+            float baseR = (float)PhantomJudgementPattern.cageRadius(t.width, t.height, 1, this.scale);
+            float r = baseR * (0.55F + 1.85F * ease);
+            Vector3f foot = frame.rel(t.feet.add(0.0, 0.08, 0.0));
+            geo.quad(foot, new Vector3f(r, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, r), ICE_CYAN[0], ICE_CYAN[1], ICE_CYAN[2], fade * 0.86F * nearFade(foot));
+         }
+         geo.end();
       }
    }
 
@@ -1602,12 +2115,16 @@ public final class PhantomJudgementFx extends FxInstance {
          float k = FxMath.easeInCubic(FxMath.window(a, COMPRESS_START, this.detonateAt));
          value = Math.max(value, 0.16F * k * att);
       }
-      // 第四幕斩绝齐爆主震（高弹干净）
+      // 第四幕斩绝齐爆主震（含 7.5t 切屏合拢二段轻余震）
       if (this.detonated) {
          float t = a - this.detonateAt;
          if (t >= 0.0F && t < 14.0F) {
             float k = 1.0F - t / 14.0F;
             value = Math.max(value, 0.72F * k * k * att);
+         }
+         if (t >= SECOND_WAVE_TICK && t < SECOND_WAVE_TICK + 6.5F) {
+            float k2 = 1.0F - (t - SECOND_WAVE_TICK) / 6.5F;
+            value = Math.max(value, 0.28F * k2 * k2 * att);
          }
       }
       return value;
@@ -1635,6 +2152,7 @@ public final class PhantomJudgementFx extends FxInstance {
       Vec3 center;
       float width;
       float height;
+      float[] capturedQuads;
 
       TargetAnchor(int entityId, Vec3 feet, float width, float height, float lockAt, double yawOffset) {
          this.entityId = entityId;
@@ -1808,6 +2326,108 @@ public final class PhantomJudgementFx extends FxInstance {
    private record SliceLine(float ax, float ay, float bx, float by, float slipSign, boolean major, float score, float influence) {
    }
 
+   /** 目标被千刃切碎后按空间 6 块分区的 3D 全息剪影碎块数据。 */
+   private static final class ShatteredSilhouette {
+      final Vec3 feet;
+      final float height;
+      final float[] quads;
+      final int[] faceChunk;
+      final Vector3f[] chunkDir = new Vector3f[SILHOUETTE_CHUNKS];
+      final float[] chunkSpeed = new float[SILHOUETTE_CHUNKS];
+
+      ShatteredSilhouette(Vec3 feet, float height, float[] quads, RandomSource rng) {
+         this.feet = feet;
+         this.height = Math.max(0.6F, height);
+         this.quads = quads;
+         int faces = quads.length / 12;
+         this.faceChunk = new int[faces];
+         for (int i = 0; i < SILHOUETTE_CHUNKS; i++) {
+            int band = i / 2;
+            int halfSide = i & 1;
+            // 同层左右两块呈约 180° 对称崩离，三层之间再依次旋错 60°，且下层略微上扬防止钻入地面被遮挡
+            double az = band * (FxMath.TAU / 6.0) + halfSide * Math.PI + (rng.nextDouble() - 0.5) * 0.40;
+            double elev = (band == 2 ? 0.54 : (band == 1 ? 0.24 : 0.08)) + (rng.nextDouble() - 0.5) * 0.14;
+            this.chunkDir[i] = new Vector3f(
+               (float)(Math.cos(az) * Math.cos(elev)),
+               (float)Math.sin(elev),
+               (float)(Math.sin(az) * Math.cos(elev))
+            ).normalize();
+            this.chunkSpeed[i] = 0.72F + rng.nextFloat() * 0.58F;
+         }
+         float invH = 1.0F / this.height;
+         for (int i = 0, f = 0; i + 11 < quads.length; i += 12, f++) {
+            float cx = (quads[i] + quads[i + 3] + quads[i + 6] + quads[i + 9]) * 0.25F;
+            float cy = (quads[i + 1] + quads[i + 4] + quads[i + 7] + quads[i + 10]) * 0.25F * invH;
+            float cz = (quads[i + 2] + quads[i + 5] + quads[i + 8] + quads[i + 11]) * 0.25F;
+            int band = cy < 0.34F ? 0 : (cy < 0.68F ? 1 : 2);
+            int halfSide = (cx + cz * 0.45F) >= 0.0F ? 0 : 1;
+            this.faceChunk[f] = band * 2 + halfSide;
+         }
+      }
+   }
+
+   /** 目标被斩杀后原位弹出的真 3D 慢动作浮空晶化碎刃。 */
+   private static final class DeathCrystal {
+      double x;
+      double y;
+      double z;
+      double px;
+      double py;
+      double pz;
+      double vx;
+      double vy;
+      double vz;
+      final int delayTick;
+      int life;
+      final int maxLife;
+      final float size;
+      final float[] color;
+      final float phase;
+      final float spinSpeed;
+
+      DeathCrystal(Vec3 origin, double vx, double vy, double vz, int delayTick, int life, float size, float[] color, float phase, float spinSpeed) {
+         this.x = this.px = origin.x;
+         this.y = this.py = origin.y;
+         this.z = this.pz = origin.z;
+         this.vx = vx;
+         this.vy = vy;
+         this.vz = vz;
+         this.delayTick = delayTick;
+         this.life = life;
+         this.maxLife = life;
+         this.size = size;
+         this.color = color;
+         this.phase = phase;
+         this.spinSpeed = spinSpeed;
+      }
+
+      void tick() {
+         this.px = this.x;
+         this.py = this.y;
+         this.pz = this.z;
+         this.x += this.vx;
+         this.y += this.vy;
+         this.z += this.vz;
+         // 初爆弹出后强阻尼转入电影级慢动作旋转上浮
+         this.vx *= 0.84;
+         this.vy = this.vy * 0.84 + 0.011;
+         this.vz *= 0.84;
+         this.life--;
+      }
+
+      Vec3 position(float partialTick) {
+         return new Vec3(
+            this.px + (this.x - this.px) * partialTick,
+            this.py + (this.y - this.py) * partialTick,
+            this.pz + (this.z - this.pz) * partialTick
+         );
+      }
+   }
+
+   /** 7.5t 切屏合拢回弹时迸出的 3D 碎裂空间镜片。 */
+   private record MirrorFragment(Vec3 origin, Vector3f outward, Vector3f axisU, Vector3f axisV, float spawn, float size, float speed, float spin, float[] color) {
+   }
+
    private static final class Spark {
       double x;
       double y;
@@ -1822,8 +2442,9 @@ public final class PhantomJudgementFx extends FxInstance {
       final int maxLife;
       final float[] color;
       final float accelY;
+      final double drag;
 
-      Spark(Vec3 origin, Vector3f velocity, int life, float[] color, float accelY) {
+      Spark(Vec3 origin, Vector3f velocity, int life, float[] color, float accelY, double drag) {
          this.x = this.px = origin.x;
          this.y = this.py = origin.y;
          this.z = this.pz = origin.z;
@@ -1834,10 +2455,11 @@ public final class PhantomJudgementFx extends FxInstance {
          this.maxLife = life;
          this.color = color;
          this.accelY = accelY;
+         this.drag = drag;
       }
 
       static Spark burst(Vec3 origin, RandomSource random, float speed, int life, float[] color, float accelY) {
-         return new Spark(origin, FxMath.randomUnit(random).mul(speed), life, color, accelY);
+         return new Spark(origin, FxMath.randomUnit(random).mul(speed), life, color, accelY, 0.88);
       }
 
       void tick() {
@@ -1847,9 +2469,9 @@ public final class PhantomJudgementFx extends FxInstance {
          this.x += this.vx;
          this.y += this.vy;
          this.z += this.vz;
-         this.vx *= 0.88;
-         this.vy = this.vy * 0.88 + this.accelY;
-         this.vz *= 0.88;
+         this.vx *= this.drag;
+         this.vy = this.vy * this.drag + this.accelY;
+         this.vz *= this.drag;
          this.life--;
       }
 
