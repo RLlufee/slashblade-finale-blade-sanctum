@@ -48,7 +48,7 @@ public class CausalityCollapse extends SpecialEffect {
             if (firstTarget != null) {
                if (firstTarget.level() instanceof ServerLevel level) {
                   ModConfig.CausalityCollapse config = ModConfig.COMMON.annihilationBlade.causalityCollapse;
-                  if (SpecialEffectSupport.tryStartCooldown(LAST_TRIGGER, player, level.getGameTime(), config.cooldownTicks.getValue())) {
+                  if (config.enabled.getValue() && SpecialEffectSupport.tryStartCooldown(LAST_TRIGGER, player, level.getGameTime(), config.cooldownTicks.getValue())) {
                      List<LivingEntity> chain = SpecialEffectSupport.nearestChain(level, player, firstTarget, config.chainRadius.getValue(), config.maxChain.getValue());
                      if (!chain.isEmpty()) {
                         Vec3 previous = player.getEyePosition();

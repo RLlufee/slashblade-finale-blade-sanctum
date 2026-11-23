@@ -50,6 +50,9 @@ public class TerminusEcho extends SpecialEffect {
             ISlashBladeState state = event.getSlashBladeState();
             if (state.hasSpecialEffect(ModSpecialEffects.TERMINUS_ECHO.getId())) {
                ModConfig.TerminusEcho config = ModConfig.COMMON.annihilationBlade.terminusEcho;
+               if (!config.enabled.getValue()) {
+                  return;
+               }
                List<TerminusEcho.EchoSequence> sequences = ACTIVE.get(player.getUUID());
                if (sequences == null || sequences.size() < config.maxActiveSequences.getValue()) {
                   if (SpecialEffectSupport.tryStartCooldown(LAST_TRIGGER, player, player.level().getGameTime(), config.cooldownTicks.getValue())) {
@@ -73,6 +76,13 @@ public class TerminusEcho extends SpecialEffect {
          if (event.player instanceof ServerPlayer player) {
             List<TerminusEcho.EchoSequence> sequences = ACTIVE.get(player.getUUID());
             if (sequences != null && !sequences.isEmpty()) {
+               if (!ModConfig.COMMON.annihilationBlade.terminusEcho.enabled.getValue()) {
+                  for (TerminusEcho.EchoSequence sequence : sequences) {
+                     AnnihilationFxEvents.echoEnd(sequence.fxHandle);
+                  }
+                  ACTIVE.remove(player.getUUID());
+                  return;
+               }
                Iterator<TerminusEcho.EchoSequence> iterator = sequences.iterator();
 
                while (iterator.hasNext()) {

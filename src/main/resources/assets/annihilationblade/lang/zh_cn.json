@@ -271,5 +271,13 @@
   "config.annihilationblade.infinity_stellaris.enable_aura_particles.tooltip": "是否开启手持无尽星空时玩家周围3x3x3常驻环绕粒子特效。",
   "config.annihilationblade.enable_aura_particles": "无尽星空常驻环绕粒子",
   "config.annihilationblade.infinity_stellaris.enable_string_lattice_particles.tooltip": "是否开启挥刀时以玩家为中心的 3D 白紫宇宙弦晶格矩阵粒子特效（默认关闭）。",
-  "config.annihilationblade.enable_string_lattice_particles": "挥刀是否造成矩阵粒子特效"
+  "config.annihilationblade.enable_string_lattice_particles": "挥刀是否造成矩阵粒子特效",
+  "config.annihilationblade.se_enabled": "启用此 SE",
+  "config.annihilationblade.annihilation_blade.dankong.enabled.tooltip": "是否启用「断空·瞬狱终闪」SE。默认开启。",
+  "config.annihilationblade.annihilation_blade.world_rift.enabled.tooltip": "是否启用「裂界·因果伤痕」连锁触发与表现。默认开启。",
+  "config.annihilationblade.annihilation_blade.terminus_echo.enabled.tooltip": "是否启用「归墟回响·终焉余律」SE。默认开启。",
+  "config.annihilationblade.annihilation_blade.void_dominion.enabled.tooltip": "是否启用「虚无权域·万象湮灭」SE。默认开启。",
+  "config.annihilationblade.annihilation_blade.causality_collapse.enabled.tooltip": "是否启用「因果坍缩·连锁抹消」SE。默认开启。",
+  "config.annihilationblade.annihilation_blade.starless_judgement.enabled.tooltip": "是否启用「星寂裁决·断天终判」SE。默认开启。",
+  "config.annihilationblade.annihilation_blade.phantom_judgement.enabled.tooltip": "是否启用「幻影审判·九剑星轨」SE。默认开启。"
 }

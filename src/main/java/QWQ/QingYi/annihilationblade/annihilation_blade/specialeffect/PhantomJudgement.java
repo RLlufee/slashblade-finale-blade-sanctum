@@ -68,6 +68,9 @@ public class PhantomJudgement extends SpecialEffect {
             if (state.hasSpecialEffect(ModSpecialEffects.PHANTOM_JUDGEMENT.getId())) {
                if (!ACTIVE.containsKey(player.getUUID())) {
                   ModConfig.PhantomJudgement config = ModConfig.COMMON.annihilationBlade.phantomJudgement;
+                  if (!config.enabled.getValue()) {
+                     return;
+                  }
                   long gameTime = player.level().getGameTime();
                   long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -config.cooldownTicks.getValue() * 2L);
                   if (gameTime - last >= config.cooldownTicks.getValue()) {
@@ -94,6 +97,12 @@ public class PhantomJudgement extends SpecialEffect {
       if (event.phase == Phase.END) {
          if (event.player instanceof ServerPlayer player) {
             ServerLevel level = player.serverLevel();
+            if (!ModConfig.COMMON.annihilationBlade.phantomJudgement.enabled.getValue()) {
+               if (ACTIVE.containsKey(player.getUUID()) || LINGERING.containsKey(player.getUUID())) {
+                  clearPlayer(level, player.getUUID());
+               }
+               return;
+            }
             tickLingeringSwords(level, player);
             PhantomJudgement.Sequence sequence = ACTIVE.get(player.getUUID());
             if (sequence != null) {

@@ -26,7 +26,7 @@ public final class WorldRiftChain {
    }
 
    public static void scheduleFromDamage(ServerLevel level, Player attacker, LivingEntity damaged) {
-      if (!executingChain) {
+      if (!executingChain && ModConfig.COMMON.annihilationBlade.worldRift.enabled.getValue()) {
          schedule(level, attacker.getUUID(), SpecialEffectSupport.centerOf(attacker), SpecialEffectSupport.centerOf(damaged), 1);
       }
    }
@@ -41,12 +41,15 @@ public final class WorldRiftChain {
    }
 
    private static void execute(ServerLevel level, UUID attackerId, Vec3 attackerOrigin, Vec3 center, int depth) {
+      ModConfig.WorldRift config = ModConfig.COMMON.annihilationBlade.worldRift;
+      if (!config.enabled.getValue()) {
+         return;
+      }
       ServerPlayer attacker = level.getServer().getPlayerList().getPlayer(attackerId);
       if (attacker == null || attacker.level() != level) {
          return;
       }
 
-      ModConfig.WorldRift config = ModConfig.COMMON.annihilationBlade.worldRift;
       double chainRange = config.chainRange.getValue();
       double chainRangeSqr = chainRange * chainRange;
       if (center.distanceToSqr(attackerOrigin) > chainRangeSqr) {

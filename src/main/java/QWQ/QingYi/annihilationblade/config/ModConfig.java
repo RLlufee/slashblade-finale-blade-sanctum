@@ -195,6 +195,7 @@ public final class ModConfig {
    }
 
    public static final class Dankong extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry range;
       public final IntegerEntry maxTargets;
       public final IntegerEntry stepInterval;
@@ -203,6 +204,7 @@ public final class ModConfig {
 
       private Dankong() {
          super("annihilation_blade.dankong", "config.annihilationblade.annihilation_blade.dankong.title");
+         this.enabled = seEnabled("dankong");
          this.range = doubleValue("range", 72.0, 8.0, 256.0, "断空搜索范围，建议 32-96。", "Severed Space target search range. Suggested: 32-96.");
          this.maxTargets = intValue("max_targets", 48, 1, 128, "连续闪现最多目标数，建议 16-64。", "Maximum blink targets. Suggested: 16-64.");
          this.stepInterval = intValue("step_interval_ticks", 3, 1, 12, "连续闪现间隔 tick，20 tick=1秒，建议 3-6。", "Ticks between blink steps; 20 ticks = 1 second. Suggested: 3-6.");
@@ -212,6 +214,7 @@ public final class ModConfig {
    }
 
    public static final class WorldRift extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry radius;
       public final IntegerEntry maxTargets;
       public final IntegerEntry chainCount;
@@ -220,6 +223,7 @@ public final class ModConfig {
 
       private WorldRift() {
          super("annihilation_blade.world_rift", "config.annihilationblade.annihilation_blade.world_rift.title");
+         this.enabled = seEnabled("world_rift");
          this.radius = doubleValue("radius", 8.0, 2.0, 32.0, "裂界扩散半径，建议 5-14。", "World Rift spread radius. Suggested: 5-14.");
          this.maxTargets = intValue("max_targets", 24, 1, 96, "裂界最多影响目标数，建议 12-36。", "Maximum World Rift targets. Suggested: 12-36.");
          this.chainCount = intValue("chain_count", 3, 1, 10, "裂界处决最多连锁次数，建议 3-5。", "Maximum World Rift execution chain depth. Suggested: 3-5.");
@@ -229,6 +233,7 @@ public final class ModConfig {
    }
 
    public static final class TerminusEcho extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry range;
       public final DoubleEntry width;
       public final IntegerEntry echoCount;
@@ -240,6 +245,7 @@ public final class ModConfig {
 
       private TerminusEcho() {
          super("annihilation_blade.terminus_echo", "config.annihilationblade.annihilation_blade.terminus_echo.title");
+         this.enabled = seEnabled("terminus_echo");
          this.range = doubleValue("range", 36.0, 8.0, 96.0, "归墟回响基础射程，建议 24-48。", "Base Terminus Echo range. Suggested: 24-48.");
          this.width = doubleValue("width", 4.4, 1.0, 16.0, "归墟回响基础宽度，建议 3-7。", "Base Terminus Echo width. Suggested: 3-7.");
          this.echoCount = intValue("echo_count", 5, 1, 12, "回响波次数量，建议 3-6。", "Echo wave count. Suggested: 3-6.");
@@ -252,6 +258,7 @@ public final class ModConfig {
    }
 
    public static final class VoidDominion extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry range;
       public final IntegerEntry maxTargets;
       public final IntegerEntry cooldownTicks;
@@ -259,6 +266,7 @@ public final class ModConfig {
 
       private VoidDominion() {
          super("annihilation_blade.void_dominion", "config.annihilationblade.annihilation_blade.void_dominion.title");
+         this.enabled = seEnabled("void_dominion");
          this.range = doubleValue("range", 26.0, 4.0, 64.0, "虚无权域半径，建议 16-36。", "Void Dominion radius. Suggested: 16-36.");
          this.maxTargets = intValue("max_targets", 64, 1, 160, "虚无权域最多影响目标数，建议 32-96。", "Maximum Void Dominion targets. Suggested: 32-96.");
          this.cooldownTicks = intValue("cooldown_ticks", 70, 0, 200, "触发冷却 tick，建议 50-100。", "Trigger cooldown in ticks. Suggested: 50-100.");
@@ -267,6 +275,7 @@ public final class ModConfig {
    }
 
    public static final class CausalityCollapse extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry chainRadius;
       public final IntegerEntry maxChain;
       public final IntegerEntry cooldownTicks;
@@ -274,6 +283,7 @@ public final class ModConfig {
 
       private CausalityCollapse() {
          super("annihilation_blade.causality_collapse", "config.annihilationblade.annihilation_blade.causality_collapse.title");
+         this.enabled = seEnabled("causality_collapse");
          this.chainRadius = doubleValue("chain_radius", 14.0, 2.0, 48.0, "因果链搜索半径，建议 8-20。", "Causality chain search radius. Suggested: 8-20.");
          this.maxChain = intValue("max_chain", 18, 1, 96, "因果链最大目标数，建议 8-30。", "Maximum causality chain targets. Suggested: 8-30.");
          this.cooldownTicks = intValue("cooldown_ticks", 10, 0, 100, "触发冷却 tick，建议 8-20。", "Trigger cooldown in ticks. Suggested: 8-20.");
@@ -282,6 +292,7 @@ public final class ModConfig {
    }
 
    public static final class StarlessJudgement extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry range;
       public final DoubleEntry width;
       public final IntegerEntry cooldownTicks;
@@ -290,6 +301,7 @@ public final class ModConfig {
 
       private StarlessJudgement() {
          super("annihilation_blade.starless_judgement", "config.annihilationblade.annihilation_blade.starless_judgement.title");
+         this.enabled = seEnabled("starless_judgement");
          this.range = doubleValue("range", 56.0, 8.0, 128.0, "星寂裁决射程，建议 36-72。", "Starless Judgement beam range. Suggested: 36-72.");
          this.width = doubleValue("width", 8.5, 1.0, 24.0, "星寂裁决宽度，建议 5-12。", "Starless Judgement beam width. Suggested: 5-12.");
          this.cooldownTicks = intValue("cooldown_ticks", 34, 0, 160, "触发冷却 tick，建议 24-60。", "Trigger cooldown in ticks. Suggested: 24-60.");
@@ -299,6 +311,7 @@ public final class ModConfig {
    }
 
    public static final class PhantomJudgement extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry range;
       public final IntegerEntry searchTicks;
       public final IntegerEntry swordCount;
@@ -312,6 +325,7 @@ public final class ModConfig {
 
       private PhantomJudgement() {
          super("annihilation_blade.phantom_judgement", "config.annihilationblade.annihilation_blade.phantom_judgement.title");
+         this.enabled = seEnabled("phantom_judgement");
          this.range = doubleValue("range", 40.0, 8.0, 96.0, "幻影审判搜索范围，建议 24-56。", "Phantom Judgement search range. Suggested: 24-56.");
          this.searchTicks = intValue("search_ticks", 20, 4, 80, "锁定阶段持续 tick，建议 12-30。", "Target lock phase duration in ticks. Suggested: 12-30.");
          this.swordCount = intValue("search_sword_count", 8, 1, 24, "锁定阶段环绕剑数量，建议 6-12。", "Orbiting search sword count. Suggested: 6-12.");
@@ -486,6 +500,13 @@ public final class ModConfig {
          .range(min, max)
          .key(name)
          .tooltip("config.annihilationblade." + name + ".tooltip")
+         .build();
+   }
+
+   private static BooleanEntry seEnabled(String seId) {
+      return BooleanEntry.builder("config.annihilationblade.se_enabled", true)
+         .key("enabled")
+         .tooltip("config.annihilationblade.annihilation_blade." + seId + ".enabled.tooltip")
          .build();
    }
 

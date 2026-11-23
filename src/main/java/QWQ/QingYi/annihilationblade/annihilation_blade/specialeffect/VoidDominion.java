@@ -39,6 +39,9 @@ public class VoidDominion extends SpecialEffect {
             ISlashBladeState state = event.getSlashBladeState();
             if (state.hasSpecialEffect(ModSpecialEffects.VOID_DOMINION.getId())) {
                ModConfig.VoidDominion config = ModConfig.COMMON.annihilationBlade.voidDominion;
+               if (!config.enabled.getValue()) {
+                  return;
+               }
                long gameTime = player.level().getGameTime();
                long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -config.cooldownTicks.getValue() * 2L);
                if (gameTime - last >= config.cooldownTicks.getValue()) {

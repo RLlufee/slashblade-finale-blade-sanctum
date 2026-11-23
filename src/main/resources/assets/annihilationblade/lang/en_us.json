@@ -271,5 +271,13 @@
   "config.annihilationblade.infinity_stellaris.enable_aura_particles.tooltip": "Whether to enable the 3x3x3 persistent ambient particle effect around the player while holding Infinity Stellaris.",
   "config.annihilationblade.enable_aura_particles": "Infinity Stellaris Persistent Ambient Particles",
   "config.annihilationblade.infinity_stellaris.enable_string_lattice_particles.tooltip": "Whether to enable the 3D white-purple cosmic string lattice matrix particle effect centered on the player when slashing (default: false).",
-  "config.annihilationblade.enable_string_lattice_particles": "Slash Cosmic String Lattice Particles"
+  "config.annihilationblade.enable_string_lattice_particles": "Slash Cosmic String Lattice Particles",
+  "config.annihilationblade.se_enabled": "Enable This SE",
+  "config.annihilationblade.annihilation_blade.dankong.enabled.tooltip": "Whether to enable the 'Severed Space: Instant Prison Flash' SE. Enabled by default.",
+  "config.annihilationblade.annihilation_blade.world_rift.enabled.tooltip": "Whether to enable the 'World Rift: Causal Scar' chain trigger and visuals. Enabled by default.",
+  "config.annihilationblade.annihilation_blade.terminus_echo.enabled.tooltip": "Whether to enable the 'Terminus Echo: Final Cadence' SE. Enabled by default.",
+  "config.annihilationblade.annihilation_blade.void_dominion.enabled.tooltip": "Whether to enable the 'Void Dominion: All-Things Obliteration' SE. Enabled by default.",
+  "config.annihilationblade.annihilation_blade.causality_collapse.enabled.tooltip": "Whether to enable the 'Causality Collapse: Chain Erasure' SE. Enabled by default.",
+  "config.annihilationblade.annihilation_blade.starless_judgement.enabled.tooltip": "Whether to enable the 'Starless Judgement: Sky-Severing Decree' SE. Enabled by default.",
+  "config.annihilationblade.annihilation_blade.phantom_judgement.enabled.tooltip": "Whether to enable the 'Phantom Judgement: Nine-Blade Astral Orbit' SE. Enabled by default."
 }

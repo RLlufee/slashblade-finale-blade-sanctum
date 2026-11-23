@@ -69,7 +69,7 @@ public class Dankong extends SpecialEffect {
    @SubscribeEvent(priority = EventPriority.HIGHEST)
    public static void onDoingSlash(DoSlashEvent event) {
       if (event.getUser() instanceof ServerPlayer player) {
-         if (!player.level().isClientSide()) {
+         if (!player.level().isClientSide() && ModConfig.COMMON.annihilationBlade.dankong.enabled.getValue()) {
             ISlashBladeState state = event.getSlashBladeState();
             if (state.hasSpecialEffect(ModSpecialEffects.DANKONG.getId())) {
                if (!player.isShiftKeyDown() && isBlinkEnabled(player)) {
@@ -108,7 +108,7 @@ public class Dankong extends SpecialEffect {
          if (event.player instanceof ServerPlayer player) {
             Dankong.Sequence sequence = ACTIVE.get(player.getUUID());
             if (sequence != null) {
-               if (player.isShiftKeyDown() || !isBlinkEnabled(player)) {
+               if (!ModConfig.COMMON.annihilationBlade.dankong.enabled.getValue() || player.isShiftKeyDown() || !isBlinkEnabled(player)) {
                   finishSequence(player, sequence);
                   return;
                }

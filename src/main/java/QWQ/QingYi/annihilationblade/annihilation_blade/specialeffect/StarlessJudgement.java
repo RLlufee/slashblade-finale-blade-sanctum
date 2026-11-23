@@ -40,7 +40,7 @@ public class StarlessJudgement extends SpecialEffect {
             ISlashBladeState state = event.getSlashBladeState();
             if (state.hasSpecialEffect(ModSpecialEffects.STARLESS_JUDGEMENT.getId())) {
                ModConfig.StarlessJudgement config = ModConfig.COMMON.annihilationBlade.starlessJudgement;
-               if (SpecialEffectSupport.tryStartCooldown(LAST_TRIGGER, player, player.level().getGameTime(), config.cooldownTicks.getValue())) {
+               if (config.enabled.getValue() && SpecialEffectSupport.tryStartCooldown(LAST_TRIGGER, player, player.level().getGameTime(), config.cooldownTicks.getValue())) {
                   ServerLevel level = player.serverLevel();
                   double range = config.range.getValue();
                   double width = config.width.getValue();
