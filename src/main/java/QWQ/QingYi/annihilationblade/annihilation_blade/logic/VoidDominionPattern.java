@@ -62,6 +62,11 @@ public final class VoidDominionPattern {
       return low;
    }
 
+   /** 领域中枢（∅ 圣印球心）相对地表的抬升高度，兼顾第一人称黄金仰角与地面全半径覆盖。 */
+   public static double centerLift(double range) {
+      return Mth.clamp(range * 0.22, 2.8, 6.2);
+   }
+
    /**
     * 将视线锚点落在前方地表。优先采用准星命中的实体或方块，空视线时回退到玩家前方十格。
     */
@@ -70,6 +75,7 @@ public final class VoidDominionPattern {
       double distance = Math.min(FALLBACK_ANCHOR_DISTANCE, maxDistance);
       Vec3 direction = lookDir.lengthSqr() < 1.0E-6 ? new Vec3(0.0, 0.0, 1.0) : lookDir.normalize();
       Vec3 end = eyePos.add(direction.scale(maxDistance));
+      boolean hitBlock = false;
 
       if (focusTarget != null) {
          double targetDistance = eyePos.distanceTo(focusTarget.getBoundingBox().getCenter());
@@ -81,17 +87,18 @@ public final class VoidDominionPattern {
          double blockDistance = eyePos.distanceTo(blockHit.getLocation());
          if (focusTarget == null || blockDistance < eyePos.distanceTo(focusTarget.getBoundingBox().getCenter())) {
             distance = Mth.clamp(blockDistance, MIN_ANCHOR_DISTANCE, maxDistance);
+            hitBlock = true;
          }
       }
 
-      Vec3 aimPoint = eyePos.add(direction.scale(distance));
-      Vec3 probeStart = aimPoint.add(0.0, 0.25, 0.0);
+      Vec3 aimPoint = eyePos.add(direction.scale(hitBlock ? Math.max(MIN_ANCHOR_DISTANCE * 0.5, distance - 0.35) : distance));
+      Vec3 probeStart = aimPoint.add(0.0, 0.6, 0.0);
       Vec3 probeEnd = aimPoint.add(0.0, -Math.max(16.0, range + 8.0), 0.0);
       BlockHitResult surfaceHit = level.clip(new ClipContext(
          probeStart, probeEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, null
       ));
-      double surfaceY = surfaceHit.getType() == HitResult.Type.BLOCK ? surfaceHit.getLocation().y : aimPoint.y;
-      double centerY = surfaceY + Math.max(2.0, range * 0.48);
+      double surfaceY = surfaceHit.getType() == HitResult.Type.BLOCK ? surfaceHit.getLocation().y : aimPoint.y - 1.5;
+      double centerY = surfaceY + centerLift(range);
       return new Vec3(aimPoint.x, centerY, aimPoint.z);
    }
 }

@@ -30,6 +30,18 @@ public final class AnnihilationFxEvents {
    public static final int VOID_PHASE_SWEEP = 2;
    /** 虚无权域持续阶段：全域归零与撤场。 */
    public static final int VOID_PHASE_COLLAPSE = 3;
+   /** 虚无权域快照标志位：本次更新包含波前/坍缩真实处决离场的目标，避免意外死亡误播删档演出。 */
+   public static final int VOID_FLAG_ERASE = 1 << 4;
+
+   /** 解包虚无权域阶段编号（低 4 位）。 */
+   public static int voidPhase(int intParam) {
+      return intParam & 0xF;
+   }
+
+   /** 解包虚无权域本次更新是否触发处决离场表现。 */
+   public static boolean voidHasErase(int intParam) {
+      return (intParam & VOID_FLAG_ERASE) != 0;
+   }
 
    private AnnihilationFxEvents() {
    }

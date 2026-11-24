@@ -22,8 +22,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
@@ -160,27 +163,30 @@ public class VoidDominion extends SpecialEffect {
             iterator.remove();
             continue;
          }
-         if (age == VoidDominionPattern.CATALOG_END_TICK - 12) {
+         if (age == VoidDominionPattern.EXPAND_END_TICK) {
             prune(sequence);
-             sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
+            sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
          }
-         if (age >= VoidDominionPattern.CATALOG_END_TICK - 12 && age < VoidDominionPattern.COLLAPSE_TICK) {
+         if (age >= VoidDominionPattern.EXPAND_END_TICK && age < VoidDominionPattern.COLLAPSE_TICK) {
             freeze(sequence);
          }
-         if (age >= VoidDominionPattern.CATALOG_END_TICK && age <= VoidDominionPattern.SWEEP_END_TICK) {
+         if (age >= VoidDominionPattern.SWEEP_START_TICK && age <= VoidDominionPattern.SWEEP_END_TICK) {
             if (age == VoidDominionPattern.SWEEP_START_TICK) {
                refreshSchedule(sequence);
-                sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
                sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_SWEEP);
             }
             executeArrived(sequence, age);
          }
          if (age == VoidDominionPattern.COLLAPSE_TICK) {
+            List<TargetPlan> remaining = new ArrayList<>(sequence.targets);
+            int collapseFlags = remaining.isEmpty()
+               ? AnnihilationFxEvents.VOID_PHASE_COLLAPSE
+               : (AnnihilationFxEvents.VOID_PHASE_COLLAPSE | AnnihilationFxEvents.VOID_FLAG_ERASE);
             AnnihilationFxEvents.voidDominionUpdate(
                sequence.handle, sequence.level, player, sequence.center, sequence.radius, sequence.scale,
-               AnnihilationFxEvents.VOID_PHASE_COLLAPSE, new int[0], new int[0], sequence.seed
+               collapseFlags, new int[0], new int[0], sequence.seed
             );
-            for (TargetPlan plan : new ArrayList<>(sequence.targets)) {
+            for (TargetPlan plan : remaining) {
                LivingEntity target = resolveTarget(sequence, plan);
                if (target != null && SlashBladeTargeting.canAttack(player, target)) {
                   release(plan, target);
@@ -197,6 +203,11 @@ public class VoidDominion extends SpecialEffect {
    private static LivingEntity rayTarget(ServerPlayer player, Vec3 eye, Vec3 direction, double range) {
       double reach = Math.max(5.0, Math.min(22.0, range * 0.75));
       Vec3 end = eye.add(direction.scale(reach));
+      BlockHitResult blockHit = player.level().clip(new ClipContext(eye, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+      if (blockHit.getType() == HitResult.Type.BLOCK) {
+         end = blockHit.getLocation();
+         reach = eye.distanceTo(end);
+      }
       AABB bounds = player.getBoundingBox().expandTowards(direction.scale(reach)).inflate(1.0);
       EntityHitResult result = ProjectileUtil.getEntityHitResult(
          player, eye, end, bounds,
@@ -261,7 +272,7 @@ public class VoidDominion extends SpecialEffect {
          return;
       }
 
-      sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_SWEEP);
+      sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_SWEEP | AnnihilationFxEvents.VOID_FLAG_ERASE);
       for (TargetPlan plan : arrived) {
          Entity entity = sequence.level.getEntity(plan.entityId);
          LivingEntity target = entity instanceof LivingEntity living && living.getUUID().equals(plan.uuid) ? living : null;
@@ -326,7 +337,8 @@ public class VoidDominion extends SpecialEffect {
          }
          if (removed && sequence.age >= VoidDominionPattern.SWEEP_START_TICK
                && sequence.age < VoidDominionPattern.COLLAPSE_TICK) {
-            sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_CATALOG);
+            // 不置 VOID_FLAG_ERASE，保持阶段为 SWEEP 且仅静默移出目标列表，防止意外死亡误播处决演出
+            sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_SWEEP);
          }
       }
    }
