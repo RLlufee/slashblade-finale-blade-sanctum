@@ -95,9 +95,19 @@ public final class AnnihilationFxEvents {
    /** 裂界神威阶段（intParam 低 4 位）：断空收刀齐斩完毕，同步引爆所有已斩杀目标残骸的神威扭杀。 */
    public static final int RIFT_LINK_UNLEASH = 4;
 
-   /** 打包裂界 intParam：bits 0..3 = 阶段种类 | bits 4..9 = 跳序号 | bits 10..15 = 最大链长。 */
+   /** 裂界神威阶段附加标记位：后方紧跟因果坍缩接管余威裂痕（跳过合缝回弹，直接坍缩成裂痕）。 */
+   public static final int RIFT_FLAG_CAUSALITY_HANDOFF = 1 << 16;
+
+   /** 打包裂界 intParam：bits 0..3 = 阶段种类 | bits 4..9 = 跳序号 | bits 10..15 = 最大链长 | bit 16 = 因果接管标记。 */
    public static int packWorldRift(int kind, int hopIndex, int maxChain) {
-      return (kind & 0xF) | ((Math.max(0, Math.min(63, hopIndex)) & 0x3F) << 4) | ((Math.max(1, Math.min(63, maxChain)) & 0x3F) << 10);
+      return packWorldRift(kind, hopIndex, maxChain, false);
+   }
+
+   public static int packWorldRift(int kind, int hopIndex, int maxChain, boolean causalityHandoff) {
+      int packed = (kind & 0xF)
+         | ((Math.max(0, Math.min(63, hopIndex)) & 0x3F) << 4)
+         | ((Math.max(1, Math.min(63, maxChain)) & 0x3F) << 10);
+      return causalityHandoff ? (packed | RIFT_FLAG_CAUSALITY_HANDOFF) : packed;
    }
 
    public static int worldRiftKind(int packed) {
@@ -112,6 +122,10 @@ public final class AnnihilationFxEvents {
       return Math.max(1, (packed >> 10) & 0x3F);
    }
 
+   public static boolean worldRiftCausalityHandoff(int packed) {
+      return (packed & RIFT_FLAG_CAUSALITY_HANDOFF) != 0;
+   }
+
    /**
     * 开启裂界·神威持续特效（独立单链开眼或断空联动预抓拍）。
     */
@@ -119,13 +133,20 @@ public final class AnnihilationFxEvents {
       ServerLevel level, Player attacker, Vec3 origin, Vec3 direction, double radius, double visualScale,
       int kind, int hopIndex, int maxChain, long seed, int[] entityIds, int[] targetTicks, int duration
    ) {
+      return worldRiftStart(level, attacker, origin, direction, radius, visualScale, kind, hopIndex, maxChain, false, seed, entityIds, targetTicks, duration);
+   }
+
+   public static int worldRiftStart(
+      ServerLevel level, Player attacker, Vec3 origin, Vec3 direction, double radius, double visualScale,
+      int kind, int hopIndex, int maxChain, boolean causalityHandoff, long seed, int[] entityIds, int[] targetTicks, int duration
+   ) {
       return FxSustained.start(level, new FxEventPacket(
          FxTypes.WORLD_RIFT,
          origin,
          direction,
          (float)radius,
          (float)visualScale,
-         packWorldRift(kind, hopIndex, maxChain),
+         packWorldRift(kind, hopIndex, maxChain, causalityHandoff),
          seed,
          attacker.getId(),
          entityIds,
@@ -140,13 +161,20 @@ public final class AnnihilationFxEvents {
       int handle, ServerLevel level, Player attacker, Vec3 origin, Vec3 direction, double radius, double visualScale,
       int kind, int hopIndex, int maxChain, long seed, int[] entityIds, int[] targetTicks
    ) {
+      worldRiftUpdate(handle, level, attacker, origin, direction, radius, visualScale, kind, hopIndex, maxChain, false, seed, entityIds, targetTicks);
+   }
+
+   public static void worldRiftUpdate(
+      int handle, ServerLevel level, Player attacker, Vec3 origin, Vec3 direction, double radius, double visualScale,
+      int kind, int hopIndex, int maxChain, boolean causalityHandoff, long seed, int[] entityIds, int[] targetTicks
+   ) {
       FxSustained.update(handle, new FxEventPacket(
          FxTypes.WORLD_RIFT,
          origin,
          direction,
          (float)radius,
          (float)visualScale,
-         packWorldRift(kind, hopIndex, maxChain),
+         packWorldRift(kind, hopIndex, maxChain, causalityHandoff),
          seed,
          attacker.getId(),
          entityIds,
@@ -159,23 +187,47 @@ public final class AnnihilationFxEvents {
       FxSustained.stop(handle);
    }
 
-   /** 因果坍缩：从 start 出发按顺序串起 chain，必须在处决链上目标之前调用。 */
-   public static void causalityCollapse(ServerLevel level, Player attacker, Vec3 start, double radius, double visualScale, List<LivingEntity> chain) {
-      int count = Math.min(chain.size(), FxEventPacket.MAX_ENTITIES);
-      int[] ids = new int[count];
-      for (int i = 0; i < count; i++) {
-         ids[i] = chain.get(i).getId();
-      }
+   /** 因果坍缩模式：独立空挥单道因果裂痕。 */
+   public static final int CAUSALITY_MODE_STANDALONE = 0;
+   /** 因果坍缩模式：断空 + 神威群体联动全战场裂痕群。 */
+   public static final int CAUSALITY_MODE_LINKED_GROUP = 1;
+   /** 因果坍缩模式：神威独立单链逐目标原位裂痕。 */
+   public static final int CAUSALITY_MODE_LINKED_SINGLE = 2;
+
+   /** 打包因果坍缩 intParam：bits 0..1 = 模式 | bits 4..11 = 单道裂痕存续 tick（20..200）。 */
+   public static int packCausality(int mode, int scarDurationTicks) {
+      int clamped = Math.max(20, Math.min(200, scarDurationTicks));
+      return (mode & 0x3) | ((clamped & 0xFF) << 4);
+   }
+
+   public static int causalityMode(int packed) {
+      return packed & 0x3;
+   }
+
+   public static int causalityScarDuration(int packed) {
+      int duration = (packed >> 4) & 0xFF;
+      return Math.max(20, Math.min(200, duration == 0 ? 64 : duration));
+   }
+
+   /**
+    * 下发一批局部 UV 错位因果裂痕（客户端自动并入同一池化实例，单 Pass 渲染，不互相打断）。
+    * entityIds[] 与 targetTicks[] 复用承载量化编码的 (dx, dz) 与 (dy, heightDeci, staggerTick)。
+    */
+   public static void causalityCollapseScars(
+      ServerLevel level, Player attacker, Vec3 origin, Vec3 direction, double envelopeRadius, double visualScale,
+      int mode, int scarDurationTicks, long seed, int[] packedXZ, int[] packedYMeta
+   ) {
       FxEvents.send(level, new FxEventPacket(
          FxTypes.CAUSALITY_COLLAPSE,
-         start,
-         attacker.getLookAngle(),
-         (float)(radius * visualScale),
+         origin,
+         direction,
+         (float)envelopeRadius,
          (float)visualScale,
-         count,
-         level.getRandom().nextLong(),
+         packCausality(mode, scarDurationTicks),
+         seed,
          attacker.getId(),
-         ids
+         packedXZ,
+         packedYMeta
       ));
    }
 

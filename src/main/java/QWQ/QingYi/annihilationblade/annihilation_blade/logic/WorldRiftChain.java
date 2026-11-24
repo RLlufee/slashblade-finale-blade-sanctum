@@ -1,9 +1,11 @@
 package QWQ.QingYi.annihilationblade.annihilation_blade.logic;
 
+import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.CausalityCollapse;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
+import QWQ.QingYi.annihilationblade.registry.ModSpecialEffects;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -12,12 +14,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
+import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
@@ -53,6 +58,30 @@ public final class WorldRiftChain {
 
    public static boolean isExecutingChain() {
       return executingChain;
+   }
+
+   /** 玩家当前是否正处于独立单链裂界序列中（用于防止独立空气版因果坍缩抢占单链演出）。 */
+   public static boolean isActiveFor(Player player) {
+      return player != null && ACTIVE_CHAINS.containsKey(player.getUUID());
+   }
+
+   /** 玩家当前是否满足触发独立单链裂界的就绪条件（用于挥刀时短暂等待命中结果，避免空挥抢跑）。 */
+   public static boolean isStandaloneReady(Player player, long gameTime) {
+      if (player == null || ACTIVE_CHAINS.containsKey(player.getUUID())) {
+         return false;
+      }
+      ModConfig.WorldRift config = ModConfig.COMMON.annihilationBlade.worldRift;
+      if (!config.enabled.getValue()) {
+         return false;
+      }
+      int cooldown = config.cooldownTicks.getValue();
+      long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -cooldown * 2L - 10L);
+      return gameTime - last >= cooldown;
+   }
+
+   /** 指定实体当前是否正被裂界单链活体定身（供因果坍缩微扰定身避让）。 */
+   public static boolean isEntitySuspended(UUID entityUuid) {
+      return SUSPENSIONS.containsKey(entityUuid);
    }
 
    /** 玩家离线、换维度或死亡时清理其全部裂界活跃态与未爆发联动。 */
@@ -104,15 +133,16 @@ public final class WorldRiftChain {
       long seed = level.getRandom().nextLong();
       int duration = WorldRiftPattern.singleChainDuration(maxChain);
 
+      boolean handoff = shouldChainCausalityCollapse(player);
       int handle = AnnihilationFxEvents.worldRiftStart(
          level, player, center, Vec3.ZERO, radius, visualScale,
-         AnnihilationFxEvents.RIFT_SINGLE_START, 0, maxChain, seed,
+         AnnihilationFxEvents.RIFT_SINGLE_START, 0, maxChain, handoff, seed,
          new int[]{target.getId()}, new int[]{WorldRiftPattern.SNAP_TICK}, duration
       );
 
       SingleChainSequence sequence = new SingleChainSequence(
          player, level, handle, attackerOrigin, radius, visualScale, maxChain, seed,
-         target.getId(), target.getUUID(), center
+         target.getId(), target.getUUID(), center, target.getBbHeight()
       );
       sequence.visited.add(target.getUUID());
       suspendTarget(sequence, target);
@@ -164,7 +194,7 @@ public final class WorldRiftChain {
       }
 
       buffer.seenIds.add(target.getId());
-      buffer.records.add(new LinkageTarget(target.getId(), center));
+      buffer.records.add(new LinkageTarget(target.getId(), center, target.getBbHeight()));
    }
 
    /**
@@ -222,6 +252,7 @@ public final class WorldRiftChain {
          if (!sequence.snapped) {
             if (current != null && current.isAlive()) {
                sequence.lastCenter = WorldRiftPattern.vortexCenter(current);
+               sequence.lastTargetHeight = current.getBbHeight();
                if (sequence.nodeAge < WorldRiftPattern.SNAP_TICK) {
                   holdSuspendedTarget(current, sequence.lastCenter);
                }
@@ -230,12 +261,16 @@ public final class WorldRiftChain {
                releaseCurrent(sequence);
                sequence.snapped = true;
                sequence.nodeAge = WorldRiftPattern.SNAP_TICK;
+               boolean handoff = shouldChainCausalityCollapse(player);
                AnnihilationFxEvents.worldRiftUpdate(
                   sequence.handle, sequence.level, player, sequence.lastCenter, Vec3.ZERO,
                   sequence.radius, sequence.visualScale,
-                  AnnihilationFxEvents.RIFT_SINGLE_SNAP, sequence.hopIndex, sequence.maxChain, sequence.seed,
+                  AnnihilationFxEvents.RIFT_SINGLE_SNAP, sequence.hopIndex, sequence.maxChain, handoff, sequence.seed,
                   new int[]{sequence.currentTargetId}, new int[]{0}
                );
+               if (handoff) {
+                  CausalityCollapse.scheduleSingleRiftScar(player, sequence.level, sequence.lastCenter, sequence.lastTargetHeight, player.getLookAngle());
+               }
             }
          }
 
@@ -243,12 +278,14 @@ public final class WorldRiftChain {
             sequence.snapped = true;
             if (current != null) {
                sequence.lastCenter = WorldRiftPattern.vortexCenter(current);
+               sequence.lastTargetHeight = current.getBbHeight();
             }
+            boolean handoff = shouldChainCausalityCollapse(player);
             // 先发 SNAP 更新再静默处决，保证客户端可在移除前做最后一次姿态同步
             AnnihilationFxEvents.worldRiftUpdate(
                sequence.handle, sequence.level, player, sequence.lastCenter, Vec3.ZERO,
                sequence.radius, sequence.visualScale,
-               AnnihilationFxEvents.RIFT_SINGLE_SNAP, sequence.hopIndex, sequence.maxChain, sequence.seed,
+               AnnihilationFxEvents.RIFT_SINGLE_SNAP, sequence.hopIndex, sequence.maxChain, handoff, sequence.seed,
                current != null ? new int[]{current.getId()} : new int[]{sequence.currentTargetId}, new int[]{0}
             );
             releaseCurrent(sequence);
@@ -259,6 +296,10 @@ public final class WorldRiftChain {
                } finally {
                   executingChain = false;
                }
+            }
+            // 单链神威联动：等待本节点 3D 躯壳吸穿奇点后，在该敌人原位留下一道同源扭曲因果裂痕
+            if (handoff) {
+               CausalityCollapse.scheduleSingleRiftScar(player, sequence.level, sequence.lastCenter, sequence.lastTargetHeight, player.getLookAngle());
             }
          }
 
@@ -273,13 +314,14 @@ public final class WorldRiftChain {
                sequence.currentTargetId = nextTarget.getId();
                sequence.currentTargetUuid = nextTarget.getUUID();
                sequence.lastCenter = nextCenter;
+               sequence.lastTargetHeight = nextTarget.getBbHeight();
                sequence.visited.add(nextTarget.getUUID());
                suspendTarget(sequence, nextTarget);
 
                AnnihilationFxEvents.worldRiftUpdate(
                   sequence.handle, sequence.level, player, nextCenter, prevCenter,
                   sequence.radius, sequence.visualScale,
-                  AnnihilationFxEvents.RIFT_SINGLE_HOP, sequence.hopIndex, sequence.maxChain, sequence.seed,
+                  AnnihilationFxEvents.RIFT_SINGLE_HOP, sequence.hopIndex, sequence.maxChain, shouldChainCausalityCollapse(player), sequence.seed,
                   new int[]{nextTarget.getId()}, new int[]{WorldRiftPattern.SNAP_TICK}
                );
                continue;
@@ -317,21 +359,50 @@ public final class WorldRiftChain {
          int count = buffer.records.size();
          int[] ids = new int[count];
          int[] staggers = new int[count];
+         List<CausalityCollapsePattern.ScarSpec> scarSpecs = new ArrayList<>(count);
          for (int i = 0; i < count; i++) {
             LinkageTarget record = buffer.records.get(i);
             ids[i] = record.entityId;
-            staggers[i] = WorldRiftPattern.linkageStaggerTick(record.center.distanceTo(pending.origin), maxDist);
+            int stagger = WorldRiftPattern.linkageStaggerTick(record.center.distanceTo(pending.origin), maxDist);
+            staggers[i] = stagger;
+            scarSpecs.add(new CausalityCollapsePattern.ScarSpec(record.center, record.height, stagger));
          }
 
+         boolean handoff = shouldChainCausalityCollapse(buffer.player);
          AnnihilationFxEvents.worldRiftUpdate(
             buffer.handle, buffer.level, buffer.player, pending.origin, buffer.player.getLookAngle(),
             buffer.radius, buffer.visualScale,
-            AnnihilationFxEvents.RIFT_LINK_UNLEASH, 0, count, buffer.seed, ids, staggers
+            AnnihilationFxEvents.RIFT_LINK_UNLEASH, 0, count, handoff, buffer.seed, ids, staggers
          );
-         // 立刻通知 STOP：客户端收到 UNLEASH 后会自行完整演完群体残骸扭杀与缝合，服务端不额外滞留句柄
+         // 立刻通知 STOP：客户端收到 UNLEASH 后会自行完整演完群体残骸扭杀与回弹，服务端不额外滞留句柄
          AnnihilationFxEvents.worldRiftEnd(buffer.handle);
+
+         // 三段导演级联动：若刀上同时持有「因果坍缩」且开启神威联动，则预约在每处奇点吸穿残骸瞬间，于各敌人原位接管为同源时空裂痕
+         if (handoff) {
+            CausalityCollapse.scheduleGroupRiftScars(buffer.player, buffer.level, pending.origin, scarSpecs);
+         }
          iterator.remove();
       }
+   }
+
+   private static boolean shouldChainCausalityCollapse(ServerPlayer player) {
+      if (player == null || !player.isAlive() || player.isRemoved()) {
+         return false;
+      }
+      ModConfig.CausalityCollapse config = ModConfig.COMMON.annihilationBlade.causalityCollapse;
+      if (!config.enabled.getValue() || !config.worldRiftLinkage.getValue()) {
+         return false;
+      }
+      return hasCausalitySe(player.getMainHandItem()) || hasCausalitySe(player.getOffhandItem());
+   }
+
+   private static boolean hasCausalitySe(ItemStack stack) {
+      if (stack.isEmpty()) {
+         return false;
+      }
+      ISlashBladeState state = stack.getCapability(ItemSlashBlade.BLADESTATE).orElse(null);
+      return state != null && !state.isBroken() && !state.isSealed()
+         && state.hasSpecialEffect(ModSpecialEffects.CAUSALITY_COLLAPSE.getId());
    }
 
    @SubscribeEvent
@@ -484,6 +555,7 @@ public final class WorldRiftChain {
       int currentTargetId;
       UUID currentTargetUuid;
       Vec3 lastCenter;
+      float lastTargetHeight;
       int hopIndex;
       int nodeAge;
       boolean snapped;
@@ -492,7 +564,7 @@ public final class WorldRiftChain {
       SingleChainSequence(
          ServerPlayer player, ServerLevel level, int handle, Vec3 attackerOrigin,
          double radius, double visualScale, int maxChain, long seed,
-         int currentTargetId, UUID currentTargetUuid, Vec3 lastCenter
+         int currentTargetId, UUID currentTargetUuid, Vec3 lastCenter, float lastTargetHeight
       ) {
          this.player = player;
          this.level = level;
@@ -505,6 +577,7 @@ public final class WorldRiftChain {
          this.currentTargetId = currentTargetId;
          this.currentTargetUuid = currentTargetUuid;
          this.lastCenter = lastCenter;
+         this.lastTargetHeight = lastTargetHeight;
       }
    }
 
@@ -535,10 +608,12 @@ public final class WorldRiftChain {
    private static final class LinkageTarget {
       final int entityId;
       final Vec3 center;
+      final float height;
 
-      LinkageTarget(int entityId, Vec3 center) {
+      LinkageTarget(int entityId, Vec3 center, float height) {
          this.entityId = entityId;
          this.center = center;
+         this.height = height;
       }
    }
 

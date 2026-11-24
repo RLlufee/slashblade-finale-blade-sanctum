@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
-import mods.flammpfeil.slashblade.event.SlashBladeEvent.DoSlashEvent;
 import mods.flammpfeil.slashblade.registry.specialeffects.SpecialEffect;
 import mods.flammpfeil.slashblade.util.AttackManager;
 import net.minecraft.server.level.ServerLevel;
@@ -26,7 +25,6 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent.Phase;
 import net.minecraftforge.event.TickEvent.PlayerTickEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
@@ -79,43 +77,53 @@ public class Dankong extends SpecialEffect {
       LAST_TRIGGER.remove(playerId);
    }
 
-   @SubscribeEvent(priority = EventPriority.HIGHEST)
-   public static void onDoingSlash(DoSlashEvent event) {
-      if (event.getUser() instanceof ServerPlayer player) {
-         if (!player.level().isClientSide() && ModConfig.COMMON.annihilationBlade.dankong.enabled.getValue()) {
-            ISlashBladeState state = event.getSlashBladeState();
-            if (state.hasSpecialEffect(ModSpecialEffects.DANKONG.getId())) {
-               if (!player.isShiftKeyDown() && isBlinkEnabled(player)) {
-                  if (!ACTIVE.containsKey(player.getUUID())) {
-                     long gameTime = player.level().getGameTime();
-                     if (SpecialEffectSupport.tryStartCooldown(LAST_TRIGGER, player, gameTime, ModConfig.COMMON.annihilationBlade.dankong.cooldownTicks.getValue())) {
-                        Vec3 origin = player.position();
-                        List<UUID> targets = collectTargets(player, origin);
-                        if (!targets.isEmpty()) {
-                           boolean linkWorldRift = state.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId())
-                              && ModConfig.COMMON.annihilationBlade.worldRift.enabled.getValue()
-                              && ModConfig.COMMON.annihilationBlade.worldRift.dankongLinkage.getValue();
-                           Dankong.Sequence sequence = new Dankong.Sequence(origin, player.getYRot(), player.getXRot(), targets, linkWorldRift);
-                           ACTIVE.put(player.getUUID(), sequence);
-                           int stepInterval = ModConfig.COMMON.annihilationBlade.dankong.stepInterval.getValue();
-                           sequence.fxHandle = AnnihilationFxEvents.dankongOpen(
-                              player.serverLevel(),
-                              player,
-                              chestOf(player, origin),
-                              ModConfig.COMMON.annihilationBlade.dankong.range.getValue(),
-                              ModConfig.COMMON.annihilationBlade.dankong.visualScale.getValue(),
-                              targets.size() * stepInterval + stepInterval * 2 + 20,
-                              entityIds(player.serverLevel(), targets)
-                           );
-                           player.level()
-                              .playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 1.2F, 1.8F);
-                        }
-                     }
-                  }
-               }
-            }
-         }
+   /**
+    * 由 {@code AnnihilationInputRouter} 在确认非左+右虚无权域双键后调用。
+    *
+    * @return 若成功启动断空闪斩序列则返回 true（阻断同次挥刀触发独立空气版因果坍缩）
+    */
+   public static boolean tryTriggerFromSlash(ServerPlayer player, ISlashBladeState state) {
+      if (player == null || state == null || player.level().isClientSide() || !ModConfig.COMMON.annihilationBlade.dankong.enabled.getValue()) {
+         return false;
       }
+      if (!state.hasSpecialEffect(ModSpecialEffects.DANKONG.getId()) || player.isShiftKeyDown() || !isBlinkEnabled(player)) {
+         return false;
+      }
+      if (ACTIVE.containsKey(player.getUUID())) {
+         return false;
+      }
+      long gameTime = player.level().getGameTime();
+      int cooldown = ModConfig.COMMON.annihilationBlade.dankong.cooldownTicks.getValue();
+      long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -cooldown * 2L);
+      if (gameTime - last < cooldown) {
+         return false;
+      }
+
+      Vec3 origin = player.position();
+      List<UUID> targets = collectTargets(player, origin);
+      if (targets.isEmpty()) {
+         return false;
+      }
+
+      LAST_TRIGGER.put(player.getUUID(), gameTime);
+      boolean linkWorldRift = state.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId())
+         && ModConfig.COMMON.annihilationBlade.worldRift.enabled.getValue()
+         && ModConfig.COMMON.annihilationBlade.worldRift.dankongLinkage.getValue();
+      Dankong.Sequence sequence = new Dankong.Sequence(origin, player.getYRot(), player.getXRot(), targets, linkWorldRift);
+      ACTIVE.put(player.getUUID(), sequence);
+      int stepInterval = ModConfig.COMMON.annihilationBlade.dankong.stepInterval.getValue();
+      sequence.fxHandle = AnnihilationFxEvents.dankongOpen(
+         player.serverLevel(),
+         player,
+         chestOf(player, origin),
+         ModConfig.COMMON.annihilationBlade.dankong.range.getValue(),
+         ModConfig.COMMON.annihilationBlade.dankong.visualScale.getValue(),
+         targets.size() * stepInterval + stepInterval * 2 + 20,
+         entityIds(player.serverLevel(), targets)
+      );
+      player.level()
+         .playSound(null, player.getX(), player.getY(), player.getZ(), SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 1.2F, 1.8F);
+      return true;
    }
 
    @SubscribeEvent

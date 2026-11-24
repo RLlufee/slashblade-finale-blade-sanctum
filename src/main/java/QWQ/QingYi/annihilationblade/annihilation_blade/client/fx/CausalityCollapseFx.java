@@ -1,155 +1,243 @@
 package QWQ.QingYi.annihilationblade.annihilation_blade.client.fx;
 
+import QWQ.QingYi.annihilationblade.annihilation_blade.logic.CausalityCollapsePattern;
+import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
 import QWQ.QingYi.annihilationblade.render.client.core.FxFrame;
 import QWQ.QingYi.annihilationblade.render.client.core.FxInstance;
+import QWQ.QingYi.annihilationblade.render.client.core.FxPass;
+import QWQ.QingYi.annihilationblade.render.client.core.FxScreenState;
 import QWQ.QingYi.annihilationblade.render.client.geometry.FxGeometry;
 import QWQ.QingYi.annihilationblade.render.client.geometry.FxGeometry.Style;
 import QWQ.QingYi.annihilationblade.render.client.geometry.FxMath;
+import QWQ.QingYi.annihilationblade.render.client.pipeline.FxShaders;
 import QWQ.QingYi.annihilationblade.render.network.FxEventPacket;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 /**
- * 湮灭之刃 SE「因果坍缩·连锁抹消」专属渲染（一次性）。
+ * 湮灭之刃 SE「因果坍缩·时空裂痕」客户端池化多裂痕渲染器。
  * <p>
- * 意象「命运之链」：一条因果丝把刀与敌人逐个串起、锁死，再从末端逆流回溯，整条因果被抹消。
- * <pre>
- *  传导     因果脉冲光珠自刀身出发，每 tick 走过 2.5 个节点；身后留下青色主丝与金 / 青双螺旋
- *  上锁     光珠抵达处套上两枚交错旋转的金色因果锁环与一圈钟面刻度，旋入收紧后「咔」地扣死
- *  绷紧     刚连起时链略微下垂，全链连通后被拉直绷紧，丝上闪过一道张力光
- *  因果倒流 自最后一个节点起逆向回溯：钟面刻度飞速逆转，锁环向内塌缩，反向涟漪向内收拢（时间倒流），
- *           身后的链段碎成短段坠落
- *  因果闭环 回到第一个节点时，一枚水平金环猛地合拢并爆出星芒，随后散开一圈淡光，钟鸣
- * </pre>
- * 与裂界的区别在拓扑：裂界是以伤口为中心的星形牵引，这里是一条贯穿所有目标的路径。
+ * 视觉母题与「裂界·万花筒神威」一脉相承（漆黑虚空视界 × 深虚空紫 × 裂界品红 × 兰粉白热锋芒 × 强虹彩色散旋涡）：
+ * <ul>
+ *   <li>承接裂界拧杀吸穿奇点后的空间残余撕裂，在每个敌人原位留下一道持续约 3.2 秒的局部神威旋涡裂痕；</li>
+ *   <li>平时挥刀（含对空）亦可在视野前方斜劈出单道同源时空裂痕；</li>
+ *   <li>全剧场通过 {@link #createOrAbsorb} 池化为单个活跃实例（最多并存 72 道），单帧恒定 1 次 {@code fx_fold_scene}（16 处）+ 1 次 {@code fx_fold_volume}（8 处）。</li>
+ * </ul>
  */
 @OnlyIn(Dist.CLIENT)
 public final class CausalityCollapseFx extends FxInstance {
-   private static final float START = 0.5F;
-   private static final float NODE_INTERVAL = 0.4F;
-   private static final float KNOT_LOCK = 2.0F;
-   private static final float HOLD = 3.0F;
-   private static final float REWIND_INTERVAL = 0.45F;
-   private static final float SHATTER_LIFE = 10.0F;
-   private static final float FINAL_LIFE = 12.0F;
-   private static final float SNAP = 2.5F;
-   private static final int SEGMENT_POINTS = 16;
-   private static final int SHARDS = 6;
-   private static final int SOUND_SAMPLES = 6;
+   private static final int MAX_POOLED_SCARS = 72;
+   private static final int MAX_SCENE_SCARS = 16;
+   private static final int MAX_VOLUME_SCARS = 8;
+   private static final int JAG_SEGMENTS = 44;
+   private static final int SPIRAL_ARMS = 5;
+   private static final int SPIRAL_STEPS = 32;
+   private static final int RING_SEGMENTS = 48;
+   private static final int SHARDS_PER_SCAR = 6;
+   private static final int STREAKS_PER_SCAR = 10;
 
-   private static final float[] CYAN = {0.2F, 0.85F, 0.95F};
-   private static final float[] DEEP_CYAN = {0.1F, 0.5F, 0.8F};
-   private static final float[] GOLD = {1.0F, 0.76F, 0.36F};
-   private static final float[] PALE_GOLD = {1.0F, 0.9F, 0.65F};
-   private static final float[] WHITE = {1.0F, 1.0F, 1.0F};
-   private static final Vec3 UP = new Vec3(0.0, 1.0, 0.0);
+   // 与 WorldRiftFx 同源高反差神威色盘 + 极细冰青棱镜微芒点缀
+   private static final float[] VOID_BLACK = {0.008F, 0.003F, 0.018F};
+   private static final float[] DEEP_BODY = {0.045F, 0.008F, 0.085F};
+   private static final float[] DEEP_VIOLET = {0.40F, 0.11F, 0.90F};
+   private static final float[] VIOLET = {0.60F, 0.22F, 1.00F};
+   private static final float[] MAGENTA = {0.94F, 0.20F, 0.96F};
+   private static final float[] HOT_ORCHID = {1.00F, 0.68F, 0.98F};
+   private static final float[] WHITE_HOT = {1.00F, 0.95F, 1.00F};
+   private static final float[] PRISM_CYAN = {0.34F, 0.90F, 1.00F};
 
-   private final float scale;
-   private final List<Vec3> nodes = new ArrayList<>();
-   private final List<Float> heights = new ArrayList<>();
-   private final float[] arrive;
-   private final float[] collapse;
-   private final float[] shatter;
-   private final Vec3[] knotAxisA;
-   private final Vec3[] knotAxisB;
-   private final Vec3[][] shardVelocity;
-   private final float allLit;
-   private final float rewindStart;
-   private final float finalAt;
-   private final RandomSource random;
+   private static CausalityCollapseFx activePool;
+   private static ClientLevel activePoolLevel;
 
-   public CausalityCollapseFx(ClientLevel level, FxEventPacket packet) {
-      super(40);
-      this.scale = Math.max(0.4F, Math.min(3.0F, packet.scale()));
-      this.random = RandomSource.create(packet.seed());
-      this.nodes.add(packet.origin());
-      this.heights.add(1.0F);
-      for (int id : packet.entityIds()) {
-         Entity entity = level.getEntity(id);
-         if (entity != null) {
-            this.nodes.add(entity.getBoundingBox().getCenter());
-            this.heights.add(entity.getBbHeight());
-         }
-      }
-      int n = this.nodes.size() - 1;
-      this.arrive = new float[n + 1];
-      this.collapse = new float[n + 1];
-      this.shatter = new float[n + 1];
-      this.knotAxisA = new Vec3[n + 1];
-      this.knotAxisB = new Vec3[n + 1];
-      this.shardVelocity = new Vec3[n + 1][SHARDS];
-      for (int i = 0; i <= n; i++) {
-         this.arrive[i] = START + i * NODE_INTERVAL;
-         double yaw = this.random.nextDouble() * Math.PI * 2.0;
-         this.knotAxisA[i] = new Vec3(Math.cos(yaw), 0.0, Math.sin(yaw));
-         this.knotAxisB[i] = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw));
-         for (int s = 0; s < SHARDS; s++) {
-            this.shardVelocity[i][s] = new Vec3(this.random.nextDouble() - 0.5, this.random.nextDouble() * 0.5, this.random.nextDouble() - 0.5).scale(0.12);
-         }
-      }
-      this.allLit = this.arrive[n] + KNOT_LOCK;
-      this.rewindStart = this.allLit + HOLD;
-      for (int i = 1; i <= n; i++) {
-         this.collapse[i] = this.rewindStart + (n - i) * REWIND_INTERVAL;
-      }
-      this.finalAt = n >= 1 ? this.collapse[1] + 0.6F : this.rewindStart;
-      for (int j = 2; j <= n; j++) {
-         this.shatter[j] = this.collapse[j] + REWIND_INTERVAL;
-      }
-      if (n >= 1) {
-         this.shatter[1] = this.finalAt;
-      }
-      this.lifetime = (int)Math.ceil(this.finalAt + FINAL_LIFE + 2.0F);
+   private final List<ScarNode> scars = new ArrayList<>();
+   private Vec3 focusPoint;
+   private int openSoundThrottle;
+   private int closeSoundThrottle;
+
+   private CausalityCollapseFx(ClientLevel level, FxEventPacket packet) {
+      super(CausalityCollapsePattern.DEFAULT_SCAR_DURATION + 4);
+      this.focusPoint = packet.origin();
+      this.absorbPacket(packet);
    }
 
-   private int count() {
-      return this.nodes.size() - 1;
+   /**
+    * 池化工厂入口：若当前世界已有活跃因果裂痕池，则直接并入新裂痕并顺延寿命，返回 {@code null} 避免重复入列。
+    */
+   public static FxInstance createOrAbsorb(ClientLevel level, FxEventPacket packet) {
+      if (activePool != null && activePoolLevel == level && !activePool.finished()) {
+         activePool.absorbPacket(packet);
+         return null;
+      }
+      CausalityCollapseFx created = new CausalityCollapseFx(level, packet);
+      activePool = created;
+      activePoolLevel = level;
+      return created;
+   }
+
+   @Override
+   public void onRemoved() {
+      if (activePool == this) {
+         activePool = null;
+         activePoolLevel = null;
+      }
+   }
+
+   private void absorbPacket(FxEventPacket packet) {
+      Vec3 origin = packet.origin();
+      Vec3 lookHint = packet.direction();
+      if (lookHint.lengthSqr() < 1.0E-6) {
+         lookHint = new Vec3(0.0, 0.0, 1.0);
+      } else {
+         lookHint = lookHint.normalize();
+      }
+      float visualScale = Mth.clamp(packet.scale(), 0.45F, 2.5F);
+      int mode = AnnihilationFxEvents.causalityMode(packet.intParam());
+      int duration = AnnihilationFxEvents.causalityScarDuration(packet.intParam());
+      boolean standalone = mode == AnnihilationFxEvents.CAUSALITY_MODE_STANDALONE;
+      int[] packedXZ = packet.entityIds();
+      int[] packedYMeta = packet.targetTicks();
+      int count = Math.min(packedXZ.length, packedYMeta.length);
+      RandomSource random = RandomSource.create(packet.seed());
+
+      if (count <= 0) {
+         this.addScar(origin, 2.0F, 0, duration, visualScale, lookHint, standalone, random);
+         return;
+      }
+
+      for (int i = 0; i < count; i++) {
+         Vec3 pos = CausalityCollapsePattern.unpackPos(origin, packedXZ[i], packedYMeta[i]);
+         float entityHeight = CausalityCollapsePattern.unpackHeight(packedYMeta[i]);
+         int stagger = CausalityCollapsePattern.unpackStagger(packedYMeta[i]);
+         this.addScar(pos, entityHeight, stagger, duration, visualScale, lookHint, standalone, random);
+      }
+      this.focusPoint = CausalityCollapsePattern.unpackPos(origin, packedXZ[0], packedYMeta[0]);
+   }
+
+   private void addScar(
+      Vec3 pos, float entityHeight, int stagger, int duration, float visualScale,
+      Vec3 lookHint, boolean standalone, RandomSource random
+   ) {
+      while (this.scars.size() >= MAX_POOLED_SCARS) {
+         this.scars.remove(0);
+      }
+      int startAge = this.age + Math.max(0, stagger);
+      float halfHeight = standalone
+         ? Mth.clamp(entityHeight * 0.56F, 0.95F, 1.55F) * visualScale
+         : Mth.clamp(entityHeight * 0.66F, 0.90F, 1.95F) * visualScale;
+
+      // 独立挥刀采用利落的斜劈角（±22°~48°）；裂界余威保留竖向偏斜（±12°~30°）呼应被斩灭身位
+      float yaw = (float)Math.atan2(lookHint.z, lookHint.x) + (random.nextFloat() - 0.5F) * (standalone ? 0.55F : 1.45F);
+      float leanMag = standalone ? (0.40F + random.nextFloat() * 0.52F) : (0.20F + random.nextFloat() * 0.32F);
+      float leanSign = random.nextBoolean() ? 1.0F : -1.0F;
+      Vector3f horiz = new Vector3f((float)Math.cos(yaw), 0.0F, (float)Math.sin(yaw));
+      Vector3f side = new Vector3f(-horiz.z, 0.0F, horiz.x);
+      Vector3f spine = new Vector3f(0.0F, 1.0F, 0.0F)
+         .fma(leanMag * leanSign, side)
+         .fma((random.nextFloat() - 0.5F) * 0.24F, horiz)
+         .normalize();
+
+      Vector3f faceNormal = new Vector3f(horiz).fma(-horiz.dot(spine), spine);
+      if (faceNormal.lengthSquared() < 1.0E-4F) {
+         faceNormal.set(FxMath.perpendicular(spine));
+      } else {
+         faceNormal.normalize();
+      }
+      Vector3f across = new Vector3f(faceNormal).cross(spine).normalize();
+
+      // 较强斜倾的时空约束环法向（在第一人称下呈扁平透视椭圆而非呆板正圆）
+      Vector3f ringNormal = new Vector3f(spine)
+         .mul(0.82F)
+         .fma(0.55F * (random.nextBoolean() ? 1.0F : -1.0F), across)
+         .fma(0.32F * (random.nextFloat() - 0.5F), faceNormal)
+         .normalize();
+
+      float seedPhase = random.nextFloat() * 62.83F;
+      float spinSign = random.nextBoolean() ? 1.0F : -1.0F;
+      float twistBase = (11.5F + random.nextFloat() * 3.5F) * (0.90F + 0.10F * visualScale);
+      ScarNode node = new ScarNode(
+         pos, halfHeight, visualScale, spine, faceNormal, across, ringNormal,
+         startAge, duration, seedPhase, spinSign, twistBase, random
+      );
+      this.scars.add(node);
+      this.extendLife(Math.max(1, (startAge + duration + 2) - this.age));
    }
 
    @Override
    public Vec3 focus() {
-      return this.nodes.size() > 1 ? this.nodes.get(1) : this.nodes.get(0);
+      // 池化实例以相机自身位置为池级焦点，条目在各自绘制通道内按 160 格独立剔除，防止远近裂痕互相误杀
+      if (!this.scars.isEmpty()) {
+         Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
+         if (camera != null) {
+            return camera.getPosition();
+         }
+      }
+      return this.focusPoint;
    }
 
    @Override
    public double cullDistance() {
-      return 192.0;
+      return 256.0;
    }
 
-   // ───────────────────────────── 逻辑 tick ─────────────────────────────
+   // ───────────────────────────── 时间轴与音效 ─────────────────────────────
 
    @Override
    public void tick(ClientLevel level) {
-      int n = this.count();
-      if (n <= 0) {
-         return;
-      }
       int age = this.ageTicks();
-      int stride = Math.max(1, n / SOUND_SAMPLES);
-      for (int i = 1; i <= n; i += stride) {
-         Vec3 node = this.nodes.get(i);
-         if ((int)Math.floor(this.arrive[i] + KNOT_LOCK) == age) {
-            play(level, node, SoundEvents.CHAIN_PLACE, 0.4F, 1.5F + this.random.nextFloat() * 0.4F);
+      this.openSoundThrottle = 0;
+      this.closeSoundThrottle = 0;
+
+      Iterator<ScarNode> iterator = this.scars.iterator();
+      while (iterator.hasNext()) {
+         ScarNode scar = iterator.next();
+         int local = age - scar.startAge;
+         if (local > scar.duration) {
+            iterator.remove();
+            continue;
          }
-         if ((int)Math.floor(this.collapse[i]) == age) {
-            play(level, node, SoundEvents.CHAIN_BREAK, 0.4F, 1.3F + this.random.nextFloat() * 0.3F);
+         if (local < 0) {
+            continue;
+         }
+         if (local == 0 && !scar.openSoundPlayed) {
+            scar.openSoundPlayed = true;
+            if (this.openSoundThrottle < 3) {
+               this.openSoundThrottle++;
+               float pitchJitter = (scar.seedPhase % 1.0F) * 0.16F;
+               play(level, scar.center, SoundEvents.GLASS_BREAK, 0.56F, 1.32F + pitchJitter);
+               play(level, scar.center, SoundEvents.AMETHYST_CLUSTER_BREAK, 0.58F, 1.15F + pitchJitter);
+               if (this.openSoundThrottle == 1) {
+                  play(level, scar.center, SoundEvents.CHORUS_FRUIT_TELEPORT, 0.48F, 1.38F);
+               }
+            }
+         }
+         int closeClickTick = Math.max(CausalityCollapsePattern.OPEN_TICKS + 4, scar.duration - 4);
+         if (local == closeClickTick && !scar.closeSoundPlayed) {
+            scar.closeSoundPlayed = true;
+            if (this.closeSoundThrottle < 2) {
+               this.closeSoundThrottle++;
+               play(level, scar.center, SoundEvents.AMETHYST_BLOCK_CHIME, 0.45F, 1.78F + (scar.seedPhase % 0.18F));
+               play(level, scar.center, SoundEvents.SCULK_CATALYST_BLOOM, 0.34F, 1.75F);
+            }
          }
       }
-      if ((int)Math.floor(this.finalAt + SNAP) == age) {
-         Vec3 anchor = this.nodes.get(1);
-         play(level, anchor, SoundEvents.BELL_BLOCK, 0.7F, 1.6F);
-         play(level, anchor, SoundEvents.AMETHYST_BLOCK_CHIME, 0.8F, 0.5F);
+      if (!this.scars.isEmpty()) {
+         this.focusPoint = this.scars.get(this.scars.size() - 1).center;
       }
    }
 
@@ -159,327 +247,799 @@ public final class CausalityCollapseFx extends FxInstance {
 
    @Override
    public void tickFallback(ClientLevel level) {
-      int n = this.count();
       int age = this.ageTicks();
-      for (int i = 1; i <= n; i++) {
-         if ((int)Math.floor(this.arrive[i] + KNOT_LOCK) == age) {
-            Vec3 node = this.nodes.get(i);
-            for (int k = 0; k < 4; k++) {
-               level.addParticle(ParticleTypes.ENCHANTED_HIT, node.x, node.y, node.z, 0.0, 0.05, 0.0);
+      for (ScarNode scar : this.scars) {
+         int local = age - scar.startAge;
+         if (local < 0 || local > scar.duration) {
+            continue;
+         }
+         if (local == 0 || local % 6 == 0) {
+            for (int k = -2; k <= 2; k++) {
+               double along = k * 0.36 * scar.halfHeight;
+               level.addParticle(
+                  local == 0 ? ParticleTypes.REVERSE_PORTAL : ParticleTypes.PORTAL,
+                  scar.center.x + scar.spine.x * along,
+                  scar.center.y + scar.spine.y * along,
+                  scar.center.z + scar.spine.z * along,
+                  0.0, 0.02, 0.0
+               );
             }
          }
       }
-      if (n >= 1 && (int)Math.floor(this.finalAt + SNAP) == age) {
-         Vec3 anchor = this.nodes.get(1);
-         for (int k = 0; k < 8; k++) {
-            double angle = Math.PI * 2.0 * k / 8.0;
-            level.addParticle(ParticleTypes.END_ROD, anchor.x + Math.cos(angle) * 0.8, anchor.y, anchor.z + Math.sin(angle) * 0.8, 0.0, 0.0, 0.0);
-         }
+   }
+
+   // ───────────────────────────── 单裂痕动画包络 ─────────────────────────────
+
+   /** 时空涡旋扭角强度曲线：骤裂瞬间过冲爆拧（1.30x），滞留期缓流呼吸，尾声平滑阻尼退旋归零。 */
+   private static float swirlCurve(float local, int duration, float seed) {
+      if (local < 0.0F || local > duration) {
+         return 0.0F;
       }
+      float openEnd = CausalityCollapsePattern.OPEN_TICKS;
+      float closeStart = Math.max(openEnd + 4.0F, duration - CausalityCollapsePattern.CLOSE_TICKS);
+      if (local < openEnd) {
+         float x = FxMath.clamp01(local / openEnd);
+         return FxMath.easeOutCubic(x) * (1.0F + 0.30F * (float)Math.sin(Math.PI * x));
+      }
+      if (local <= closeStart) {
+         return 0.90F + 0.08F * (float)Math.sin(local * 0.24F + seed);
+      }
+      float closeT = FxMath.clamp01((local - closeStart) / Math.max(1.0F, duration - closeStart));
+      return 0.90F * (1.0F - FxMath.easeInOutSine(closeT));
    }
 
-   // ───────────────────────────── 几何工具 ─────────────────────────────
-
-   /** 段 j（节点 j-1 → j）上参数 k 处的位置，带随时间收紧的下垂。 */
-   private Vec3 pointOn(int j, double k, float t) {
-      Vec3 a = this.nodes.get(j - 1);
-      Vec3 b = this.nodes.get(j);
-      double length = a.distanceTo(b);
-      float tighten = FxMath.easeOutCubic(FxMath.window(t, this.arrive[j], this.allLit + 1.0F));
-      double sag = 0.22 * Math.min(length, 12.0) * (1.0 - tighten) * Math.sin(Math.PI * k);
-      return a.lerp(b, k).subtract(0.0, sag, 0.0);
+   /** 漆黑视界暗缝张开度：0~3t 猛裂，滞留期稳定微呼吸，尾声平滑收拢合缝。 */
+   private static float crackOpenCurve(float local, int duration, float seed) {
+      if (local < 0.0F || local > duration) {
+         return 0.0F;
+      }
+      float open = FxMath.easeOutCubic(FxMath.window(local, 0.0F, 3.0F));
+      float closeStart = Math.max(8.0F, duration - CausalityCollapsePattern.CLOSE_TICKS);
+      float close = 1.0F - FxMath.easeInCubic(FxMath.window(local, closeStart, duration - 1.2F));
+      float tremble = 0.93F + 0.07F * (float)Math.sin(local * 0.52F + seed);
+      return open * close * tremble;
    }
 
-   private static float nearFade(Vector3f rel) {
-      return FxMath.window(rel.length(), 0.8F, 2.5F);
+   /** 裂痕纵向长度伸缩（合缝最后几帧自上下两端向中点拉紧收束）。 */
+   private static float lengthScale(float local, int duration) {
+      float open = FxMath.easeOutCubic(FxMath.window(local, 0.0F, 2.5F));
+      float closeStart = Math.max(8.0F, duration - CausalityCollapsePattern.CLOSE_TICKS + 4.0F);
+      float close = 1.0F - FxMath.easeInCubic(FxMath.window(local, closeStart, duration));
+      return open * close;
    }
 
-   // ───────────────────────────── 网格层 ─────────────────────────────
+   private static float openFlashCurve(float local) {
+      if (local < 0.0F || local > 5.0F) {
+         return 0.0F;
+      }
+      return FxMath.envelope(local / 5.0F, 0.16F, 0.36F);
+   }
+
+   private static float alignGlintCurve(float local, int duration) {
+      float start = duration - 4.8F;
+      float end = duration - 0.3F;
+      if (local < start || local > end) {
+         return 0.0F;
+      }
+      return FxMath.envelope((local - start) / Math.max(1.0F, end - start), 0.35F, 0.55F);
+   }
+
+   // ───────────────────────────── 预乘 Alpha 本体层（锁步弯曲暗缝 + 中心奇点瞳孔 + 暗晶核） ─────────────────────────────
 
    @Override
-   public void renderGeometry(FxGeometry g, FxFrame frame) {
-      int n = this.count();
-      if (n <= 0) {
+   public boolean hasBody() {
+      return true;
+   }
+
+   @Override
+   public void renderBody(FxGeometry b, FxFrame frame) {
+      if (this.scars.isEmpty()) {
          return;
       }
       float t = this.age(frame.partialTick);
-      float tension = FxMath.envelope(FxMath.window(t, this.allLit - 0.5F, this.allLit + 2.0F), 0.25F, 0.4F);
 
-      // 1. 因果主丝：青色外丝 + 白热内芯
-      g.begin(Style.RIBBON, 6.0F + 6.0F * tension, 0.2F, 6.0F, 5.0F, 7.0F, 0.5F);
-      for (int j = 1; j <= n; j++) {
-         this.drawCore(g, frame, j, t, 0.035F * this.scale, CYAN, 1.0F);
-      }
-      g.begin(Style.RIBBON, 10.0F, 0.2F, 10.0F, 0.0F, 0.0F, 0.2F);
-      for (int j = 1; j <= n; j++) {
-         this.drawCore(g, frame, j, t, 0.011F * this.scale, WHITE, 0.8F + 0.2F * tension);
-      }
-
-      // 2. 因果双螺旋：金 / 青两股细丝缠绕主丝
-      g.begin(Style.RIBBON, 4.0F, 0.2F, 7.0F, 0.0F, 0.0F, 0.4F);
-      for (int j = 1; j <= n; j++) {
-         this.drawHelix(g, frame, j, t, 0.0F, GOLD);
-         this.drawHelix(g, frame, j, t, (float)Math.PI, DEEP_CYAN);
-      }
-
-      // 3. 碎段、光珠拖尾
-      g.begin(Style.RIBBON, 5.0F, 0.2F, 6.0F, 0.0F, 0.0F, 0.4F);
-      for (int j = 1; j <= n; j++) {
-         float e = t - this.shatter[j];
-         if (e < 0.0F || e >= SHATTER_LIFE) {
+      // 1. 严格沿 jagSample(u) 弯曲的双交叉 3D 暗缝片（彻底根除直轴 VOID_SLIT 错位问题）
+      boolean cavityStarted = false;
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
             continue;
          }
-         float k = 1.0F - e / SHATTER_LIFE;
-         Vec3 a = this.nodes.get(j - 1);
-         Vec3 b = this.nodes.get(j);
-         Vec3 unit = b.subtract(a).normalize();
-         double pieceLength = a.distanceTo(b) / SHARDS * 0.7 * k;
-         for (int s = 0; s < SHARDS; s++) {
-            Vec3 mid = a.lerp(b, (s + 0.5) / SHARDS).add(this.shardVelocity[j][s].scale(e)).add(0.0, -0.012 * e * e, 0.0);
-            Vec3 half = unit.scale(pieceLength * 0.5);
-            Vector3f rel = frame.rel(mid);
-            float[] tint = s % 2 == 0 ? CYAN : GOLD;
-            g.streak(frame.rel(mid.add(half)), frame.rel(mid.subtract(half)), 0.03F * this.scale * k, tint[0], tint[1], tint[2], (float)Math.pow(k, 1.2) * nearFade(rel));
+         float crack = crackOpenCurve(local, scar.duration, scar.seedPhase);
+         float lenScale = lengthScale(local, scar.duration);
+         if (crack <= 0.01F || lenScale <= 0.01F) {
+            continue;
          }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 160.0F * 160.0F) {
+            continue;
+         }
+         if (!cavityStarted) {
+            // p3 = -0.05 确保 fx_world.fsh 的 smoothstep(dissolve±0.02) 恒为 1.0，不出现 Worley 孔洞
+            b.begin(Style.AFTERIMAGE, 0.70F, 0.12F, 0.45F, 0.88F, 0.0F, -0.05F);
+            cavityStarted = true;
+         }
+         float halfH = scar.halfHeight * lenScale;
+         float halfW = (0.045F + 0.080F * crack) * scar.visualScale * lenScale;
+         this.emitCurvedAbyssStrip(b, scar, c, halfH, halfW, scar.across, 0.96F * crack);
+         this.emitCurvedAbyssStrip(b, scar, c, halfH * 0.94F, halfW * 0.58F, scar.faceNormal, 0.80F * crack);
       }
-      Vec3 forward = this.beadForward(t);
-      Vec3 backward = this.beadBackward(t);
-      if (forward != null) {
-         Vec3 trail = this.beadForward(t - 0.5F);
-         if (trail != null) {
-            Vector3f head = frame.rel(forward);
-            g.streak(head, frame.rel(trail), 0.07F * this.scale, CYAN[0], CYAN[1], CYAN[2], nearFade(head));
-         }
-      }
-      if (backward != null) {
-         Vec3 trail = this.beadBackward(t - 0.4F);
-         if (trail != null) {
-            Vector3f head = frame.rel(backward);
-            g.streak(head, frame.rel(trail), 0.08F * this.scale, GOLD[0], GOLD[1], GOLD[2], nearFade(head));
-         }
+      if (cavityStarted) {
+         b.end();
       }
 
-      // 4. 因果锁环（两枚交错旋转的金环）
-      g.begin(Style.RIBBON, 4.5F, 0.3F, 6.0F, 0.0F, 0.0F, 0.5F);
-      for (int i = 1; i <= n; i++) {
-         this.drawKnotRings(g, frame, i, t);
+      // 2. 裂痕喉心漆黑奇点视界核（CORONA 日蚀黑核：赋予裂痕"吞光黑洞残口"的立体深度）
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float crack = crackOpenCurve(local, scar.duration, scar.seedPhase);
+         float lenScale = lengthScale(local, scar.duration);
+         if (crack <= 0.04F || lenScale <= 0.04F) {
+            continue;
+         }
+         Vector3f baseC = frame.rel(scar.center);
+         if (baseC.lengthSquared() > 120.0F * 120.0F) {
+            continue;
+         }
+         float halfH = scar.halfHeight * lenScale;
+         Vector3f eyePos = new Vector3f(baseC).fma(scar.jagSample(0.0F) * halfH, scar.across);
+         float holeR = (0.12F + 0.11F * crack) * scar.visualScale * lenScale;
+         if (holeR <= 0.025F) {
+            continue;
+         }
+         b.geoCenter(eyePos);
+         b.begin(Style.CORONA, 0.22F, 0.0F, 2.5F, 1.3F, 1.6F * scar.spinSign, 0.50F);
+         b.deformedSphere(eyePos, holeR, 8, 12, t * 0.25F * scar.spinSign, 0.05F, 2.2F, t * 0.3F, VOID_BLACK[0], VOID_BLACK[1], VOID_BLACK[2], 0.94F * crack);
+         b.end();
+         b.clearGeoCenter();
       }
 
-      // 5. 钟面刻度、反向涟漪、闭环金环
-      g.begin(Style.RING, 3.6F, 0.3F, 0.95F, 0.03F, 12.0F, 0.0F);
-      for (int i = 1; i <= n; i++) {
-         this.drawDial(g, frame, i, t);
+      // 3. 裂隙旁悬浮旋转的 3D 玄黑晶核碎刃
+      boolean shardStarted = false;
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float crack = crackOpenCurve(local, scar.duration, scar.seedPhase);
+         float swirl = swirlCurve(local, scar.duration, scar.seedPhase);
+         if (crack <= 0.02F) {
+            continue;
+         }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 140.0F * 140.0F) {
+            continue;
+         }
+         if (!shardStarted) {
+            b.begin(Style.CRYSTAL_SHARD, 0.36F, 0.05F, 2.2F, 1.5F, 0.35F, 0.0F);
+            shardStarted = true;
+         }
+         this.emitScarShards(b, scar, c, local, crack, swirl, true);
       }
-      g.begin(Style.RING, 4.0F, 0.3F, 0.95F, 0.04F, 0.0F, 0.0F);
-      for (int i = 1; i <= n; i++) {
-         this.drawInverseRipple(g, frame, i, t);
+      if (shardStarted) {
+         b.end();
       }
-      this.drawFinalRings(g, frame, t);
+   }
 
-      // 6. 公告板：光珠、上锁闪光、坍缩点、闭环星芒
-      g.begin(Style.GLOW, 8.0F, 0.0F, 6.0F, 3.0F, 0.9F, 0.0F);
-      if (forward != null) {
-         Vector3f p = frame.rel(forward);
-         g.billboard(p, 0.45F * this.scale, 0.0F, CYAN[0], CYAN[1], CYAN[2], nearFade(p));
-         g.billboard(p, 0.18F * this.scale, 0.0F, WHITE[0], WHITE[1], WHITE[2], nearFade(p));
-      }
-      if (backward != null) {
-         Vector3f p = frame.rel(backward);
-         g.billboard(p, 0.5F * this.scale, 0.0F, GOLD[0], GOLD[1], GOLD[2], nearFade(p));
-      }
-      for (int i = 1; i <= n; i++) {
-         Vector3f p = frame.rel(this.nodes.get(i));
-         float lock = t - (this.arrive[i] + KNOT_LOCK);
-         if (lock >= 0.0F && lock < 2.0F) {
-            float k = 1.0F - lock / 2.0F;
-            g.billboard(p, 0.9F * this.scale, 0.0F, PALE_GOLD[0], PALE_GOLD[1], PALE_GOLD[2], k * k * nearFade(p));
+   private void emitCurvedAbyssStrip(
+      FxGeometry b, ScarNode scar, Vector3f center, float halfH, float halfW, Vector3f widthAxis, float alpha
+   ) {
+      Vector3f prevL = null;
+      Vector3f prevR = null;
+      for (int i = 0; i <= JAG_SEGMENTS; i++) {
+         float u = (float)i / JAG_SEGMENTS * 2.0F - 1.0F;
+         float taper = (float)Math.pow(Math.max(0.0F, 1.0F - u * u), 0.72);
+         float jag = scar.jagSample(u) * halfH * taper;
+         Vector3f mid = new Vector3f(center)
+            .fma(u * halfH, scar.spine)
+            .fma(jag, scar.across);
+         float w = halfW * taper;
+         Vector3f curL = new Vector3f(mid).fma(-w, widthAxis);
+         Vector3f curR = new Vector3f(mid).fma(w, widthAxis);
+         if (prevL != null) {
+            b.rawQuad(prevL, prevR, curR, curL, VOID_BLACK[0], VOID_BLACK[1], VOID_BLACK[2], alpha);
          }
-         float pop = t - (this.collapse[i] + 1.5F);
-         if (pop >= 0.0F && pop < 2.5F) {
-            float k = 1.0F - pop / 2.5F;
-            g.billboard(p, 1.1F * this.scale, (float)(Math.PI * 0.25), WHITE[0], WHITE[1], WHITE[2], k * k * nearFade(p));
+         prevL = curL;
+         prevR = curR;
+      }
+   }
+
+   // ───────────────────────────── HDR 网格发光层（品红/兰粉裂口锋刃 × 螺旋空间丝 × 倾斜约束环 × 吸积流丝） ─────────────────────────────
+
+   @Override
+   public void renderGeometry(FxGeometry g, FxFrame frame) {
+      if (this.scars.isEmpty()) {
+         return;
+      }
+      float t = this.age(frame.partialTick);
+
+      // 1. 锯齿双唇品红主锋 + 围绕裂隙的 4 条裂界同源螺旋旋臂 + 倾斜空间约束环（外圈品红/虚空紫层）
+      g.begin(Style.RIBBON, 4.8F, 0.14F, 5.8F, 5.5F, 13.0F, 0.52F);
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float crack = crackOpenCurve(local, scar.duration, scar.seedPhase);
+         float swirl = swirlCurve(local, scar.duration, scar.seedPhase);
+         float lenScale = lengthScale(local, scar.duration);
+         if ((crack <= 0.01F && swirl <= 0.01F) || lenScale <= 0.01F) {
+            continue;
+         }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 160.0F * 160.0F) {
+            continue;
+         }
+
+         float halfH = scar.halfHeight * lenScale;
+         float lipSep = (0.024F + 0.048F * crack) * scar.visualScale * lenScale;
+         float flashBoost = 1.0F + 0.85F * openFlashCurve(local);
+
+         // 左右锯齿裂口主刃（裂界品红锋芒）
+         if (crack > 0.01F) {
+            this.drawJaggedLip(g, scar, c, halfH, lipSep, 1.0F, 0.024F * scar.visualScale, MAGENTA, 0.88F * crack * flashBoost);
+            this.drawJaggedLip(g, scar, c, halfH, lipSep, -1.0F, 0.024F * scar.visualScale, MAGENTA, 0.88F * crack * flashBoost);
+         }
+
+         // 5 条 3D 顺滑螺旋空间丝（外层品红/虚空紫）
+         if (swirl > 0.02F) {
+            this.drawScarSpiralArms(g, scar, c, halfH, local, crack, swirl, false);
+            this.drawScarOrbitRing(g, scar, c, local, crack, swirl, false);
          }
       }
-      float e = t - this.finalAt;
-      if (e >= SNAP && e < SNAP + 4.0F) {
-         Vector3f p = frame.rel(this.nodes.get(1));
-         float k = 1.0F - (e - SNAP) / 4.0F;
-         float size = (1.2F + 1.4F * (1.0F - k)) * this.scale;
-         g.billboard(p, size, 0.0F, WHITE[0], WHITE[1], WHITE[2], k * nearFade(p));
-         g.billboard(p, size, (float)(Math.PI * 0.5), GOLD[0], GOLD[1], GOLD[2], k * nearFade(p));
+      g.end();
+
+      // 2. 兰粉白热内锋芯 + 螺旋细白芯 + 约束环亮芯（复刻图中明亮紫白拉丝核心）
+      g.begin(Style.RIBBON, 8.2F, 0.10F, 9.8F, 0.0F, 0.0F, 0.24F);
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float crack = crackOpenCurve(local, scar.duration, scar.seedPhase);
+         float swirl = swirlCurve(local, scar.duration, scar.seedPhase);
+         float lenScale = lengthScale(local, scar.duration);
+         if ((crack <= 0.01F && swirl <= 0.01F) || lenScale <= 0.01F) {
+            continue;
+         }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 160.0F * 160.0F) {
+            continue;
+         }
+         float halfH = scar.halfHeight * lenScale;
+         float lipSep = (0.020F + 0.038F * crack) * scar.visualScale * lenScale;
+         float flashBoost = 1.0F + 0.85F * openFlashCurve(local);
+         if (crack > 0.01F) {
+            this.drawJaggedLip(g, scar, c, halfH, lipSep, 1.0F, 0.009F * scar.visualScale, HOT_ORCHID, 0.82F * crack * flashBoost);
+            this.drawJaggedLip(g, scar, c, halfH, lipSep, -1.0F, 0.009F * scar.visualScale, HOT_ORCHID, 0.82F * crack * flashBoost);
+         }
+         if (swirl > 0.02F) {
+            this.drawScarSpiralArms(g, scar, c, halfH, local, crack, swirl, true);
+            this.drawScarOrbitRing(g, scar, c, local, crack, swirl, true);
+         }
+      }
+      g.end();
+
+      // 3. 沿螺旋被持续抽进裂口的空间尘埃流丝（streak）
+      g.begin(Style.RIBBON, 6.2F, 0.12F, 6.5F, 0.0F, 0.0F, 0.30F);
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float swirl = swirlCurve(local, scar.duration, scar.seedPhase);
+         if (swirl <= 0.02F) {
+            continue;
+         }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 120.0F * 120.0F) {
+            continue;
+         }
+         this.drawScarStreaks(g, scar, c, local, swirl);
+      }
+      g.end();
+
+      // 4. 纤锐 3D 棱晶空间碎刃（克制亮度防止泛光糊成白块，突出玄黑晶核与冷冽棱边）
+      g.begin(Style.CRYSTAL_SHARD, 2.6F, 0.05F, 2.6F, 2.0F, 0.28F, 0.0F);
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float crack = crackOpenCurve(local, scar.duration, scar.seedPhase);
+         float swirl = swirlCurve(local, scar.duration, scar.seedPhase);
+         if (crack <= 0.02F) {
+            continue;
+         }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 140.0F * 140.0F) {
+            continue;
+         }
+         this.emitScarShards(g, scar, c, local, crack, swirl, false);
+      }
+      g.end();
+
+      // 5. 初裂空间涟漪环（0..7t）
+      g.begin(Style.RING, 4.6F, 0.10F, 0.85F, 0.020F, 0.0F, 0.0F);
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > 7.0F) {
+            continue;
+         }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 140.0F * 140.0F) {
+            continue;
+         }
+         float rk = local / 7.0F;
+         float ringAlpha = (1.0F - rk) * (1.0F - rk) * 0.85F;
+         float r = (0.28F + 1.15F * FxMath.easeOutCubic(rk)) * scar.visualScale;
+         g.quad(c, new Vector3f(scar.across).mul(r), new Vector3f(scar.spine).mul(r), MAGENTA[0], MAGENTA[1], MAGENTA[2], ringAlpha);
+      }
+      g.end();
+
+      // 6. 初裂兰粉白热耀斑 & 临终合缝针尖星芒
+      g.begin(Style.GLOW, 7.8F, 0.0F, 4.2F, 2.4F, 1.05F, 0.0F);
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float openFlash = openFlashCurve(local);
+         float alignGlint = alignGlintCurve(local, scar.duration);
+         if (openFlash <= 0.01F && alignGlint <= 0.01F) {
+            continue;
+         }
+         Vector3f c = frame.rel(scar.center);
+         if (c.lengthSquared() > 160.0F * 160.0F) {
+            continue;
+         }
+         if (openFlash > 0.01F) {
+            float sz = (0.48F + 0.56F * openFlash) * scar.visualScale;
+            g.billboard(c, sz, 0.0F, HOT_ORCHID[0], HOT_ORCHID[1], HOT_ORCHID[2], 0.88F * openFlash);
+            g.billboard(c, sz * 0.65F, (float)(Math.PI * 0.5), WHITE_HOT[0], WHITE_HOT[1], WHITE_HOT[2], 0.85F * openFlash);
+         }
+         if (alignGlint > 0.01F) {
+            float sz = (0.34F + 0.42F * alignGlint) * scar.visualScale;
+            g.billboard(c, sz, local * 0.22F, WHITE_HOT[0], WHITE_HOT[1], WHITE_HOT[2], 0.92F * alignGlint);
+            g.billboard(c, sz * 0.72F, -local * 0.18F, PRISM_CYAN[0], PRISM_CYAN[1], PRISM_CYAN[2], 0.65F * alignGlint);
+         }
       }
       g.end();
    }
 
-   private void drawCore(FxGeometry g, FxFrame frame, int j, float t, float width, float[] color, float alphaScale) {
-      float lit = FxMath.window(t, this.arrive[j - 1], this.arrive[j]);
-      if (lit <= 0.0F || t >= this.shatter[j]) {
-         return;
+   private void drawJaggedLip(
+      FxGeometry g, ScarNode scar, Vector3f center, float halfH, float lipSep, float sideSign,
+      float baseWidth, float[] color, float alpha
+   ) {
+      List<Vector3f> pts = new ArrayList<>(JAG_SEGMENTS + 1);
+      float[] widths = new float[JAG_SEGMENTS + 1];
+      float[] alphas = new float[JAG_SEGMENTS + 1];
+      for (int i = 0; i <= JAG_SEGMENTS; i++) {
+         float u = (float)i / JAG_SEGMENTS * 2.0F - 1.0F;
+         float taper = (float)Math.pow(Math.max(0.0F, 1.0F - u * u), 0.72);
+         float jag = scar.jagSample(u) * halfH * taper;
+         Vector3f p = new Vector3f(center)
+            .fma(u * halfH, scar.spine)
+            .fma(jag + sideSign * lipSep * taper, scar.across)
+            .fma(sideSign * lipSep * 0.20F * taper, scar.faceNormal);
+         pts.add(p);
+         widths[i] = baseWidth * (0.28F + 0.72F * taper);
+         alphas[i] = alpha * (0.24F + 0.76F * taper);
       }
-      List<Vector3f> points = new ArrayList<>(SEGMENT_POINTS);
-      float[] widths = new float[SEGMENT_POINTS];
-      float[] alphas = new float[SEGMENT_POINTS];
-      for (int i = 0; i < SEGMENT_POINTS; i++) {
-         double k = lit * i / (double)(SEGMENT_POINTS - 1);
-         Vector3f p = frame.rel(this.pointOn(j, k, t));
-         points.add(p);
-         widths[i] = width;
-         alphas[i] = alphaScale * nearFade(p) * (i == SEGMENT_POINTS - 1 && lit < 1.0F ? 0.4F : 1.0F);
-      }
-      g.ribbon(points, widths, alphas, color[0], color[1], color[2]);
+      g.ribbon(pts, widths, alphas, color[0], color[1], color[2]);
    }
 
-   private void drawHelix(FxGeometry g, FxFrame frame, int j, float t, float phase, float[] color) {
-      float lit = FxMath.window(t, this.arrive[j - 1], this.arrive[j]);
-      if (lit <= 0.0F || t >= this.shatter[j]) {
-         return;
+   /** 围绕每道裂痕中轴的 5 条顺滑 3D 对数螺旋空间余威丝（32 段精细采样，消除折线拐角）。 */
+   private void drawScarSpiralArms(
+      FxGeometry g, ScarNode scar, Vector3f center, float halfH, float local, float crack, float swirl, boolean corePass
+   ) {
+      float outerR = (0.44F + 0.56F * swirl) * scar.visualScale;
+      float innerR = (0.04F + 0.05F * crack) * scar.visualScale;
+      float spin = scar.spinSign * (local * 0.28F + scar.seedPhase);
+      float wBase = (corePass ? 0.010F : 0.030F) * scar.visualScale;
+      wBase = Math.max(wBase, center.length() * (corePass ? 0.0008F : 0.0019F));
+
+      List<Vector3f> pts = new ArrayList<>(SPIRAL_STEPS);
+      float[] widths = new float[SPIRAL_STEPS];
+      float[] alphas = new float[SPIRAL_STEPS];
+
+      for (int arm = 0; arm < SPIRAL_ARMS; arm++) {
+         pts.clear();
+         float baseAng = FxMath.TAU * arm / SPIRAL_ARMS + spin;
+         float axialSpan = ((arm % 2 == 0) ? 1.0F : -1.0F) * halfH * (0.42F + 0.14F * (arm % 3));
+         float[] col = corePass ? WHITE_HOT : (arm % 2 == 0 ? MAGENTA : VIOLET);
+
+         for (int s = 0; s < SPIRAL_STEPS; s++) {
+            float k = (float)s / (SPIRAL_STEPS - 1);
+            float inv = 1.0F - k;
+            float r = FxMath.lerp(outerR, innerR, (float)Math.pow(k, 0.72));
+            float ang = baseAng + scar.spinSign * k * (4.2F + 2.0F * swirl);
+            float cs = (float)Math.cos(ang);
+            float sn = (float)Math.sin(ang);
+            float axial = axialSpan * inv * (float)Math.sin(k * Math.PI);
+            Vector3f p = new Vector3f(center)
+               .fma(r * cs, scar.across)
+               .fma(r * sn, scar.faceNormal)
+               .fma(axial, scar.spine);
+            pts.add(p);
+
+            float taper = (float)Math.sin(Math.PI * k);
+            widths[s] = wBase * (0.25F + 0.85F * taper) * (0.45F + 0.55F * inv);
+            alphas[s] = swirl * (0.18F + 0.82F * taper) * (corePass ? 0.84F : 0.86F);
+         }
+         g.ribbon(pts, widths, alphas, col[0], col[1], col[2]);
       }
-      Vec3 a = this.nodes.get(j - 1);
-      Vec3 b = this.nodes.get(j);
-      Vec3 axis = b.subtract(a);
-      double length = axis.length();
-      if (length < 0.3) {
-         return;
-      }
-      Vec3 unit = axis.scale(1.0 / length);
-      Vec3 side = unit.cross(UP);
-      side = side.lengthSqr() < 1.0E-6 ? new Vec3(1.0, 0.0, 0.0) : side.normalize();
-      Vec3 up = side.cross(unit).normalize();
-      double turns = Math.max(2.0, length / 1.2);
-      double radius = 0.13 * this.scale;
-      int samples = Math.max(SEGMENT_POINTS, (int)(turns * 8.0));
-      List<Vector3f> points = new ArrayList<>(samples);
-      float[] widths = new float[samples];
-      float[] alphas = new float[samples];
-      for (int i = 0; i < samples; i++) {
-         double k = lit * i / (double)(samples - 1);
-         double angle = k * turns * Math.PI * 2.0 + t * 0.25 + phase;
-         double r = radius * Math.sqrt(Math.sin(Math.PI * k));
-         Vec3 p = this.pointOn(j, k, t).add(side.scale(Math.cos(angle) * r)).add(up.scale(Math.sin(angle) * r));
-         Vector3f rel = frame.rel(p);
-         points.add(rel);
-         widths[i] = 0.016F * this.scale;
-         alphas[i] = 0.85F * nearFade(rel);
-      }
-      g.ribbon(points, widths, alphas, color[0], color[1], color[2]);
    }
 
-   /** 正向传导光珠的位置（未在传导期返回 null）。 */
-   private Vec3 beadForward(float t) {
-      int n = this.count();
-      if (t < this.arrive[0] || t >= this.arrive[n]) {
-         return null;
+   /** 环绕裂痕喉心的斜倾时空约束丝环（48 段顺滑透视椭圆 + 非均匀光脉，避免呆板纯圆圈）。 */
+   private void drawScarOrbitRing(
+      FxGeometry g, ScarNode scar, Vector3f center, float local, float crack, float swirl, boolean corePass
+   ) {
+      float radius = (0.42F + 0.22F * crack) * scar.visualScale * (0.35F + 0.65F * swirl);
+      if (radius <= 0.08F) {
+         return;
       }
-      for (int j = 1; j <= n; j++) {
-         if (t < this.arrive[j]) {
-            return this.pointOn(j, FxMath.window(t, this.arrive[j - 1], this.arrive[j]), t);
+      Vector3f u = FxMath.perpendicular(scar.ringNormal);
+      Vector3f v = new Vector3f(scar.ringNormal).cross(u).normalize();
+      float spin = scar.spinSign * local * 0.22F + scar.seedPhase;
+      float w = (corePass ? 0.007F : 0.018F) * scar.visualScale;
+      w = Math.max(w, center.length() * (corePass ? 0.0006F : 0.0014F));
+      float[] col = corePass ? WHITE_HOT : HOT_ORCHID;
+      float baseAlpha = swirl * (corePass ? 0.72F : 0.52F);
+
+      List<Vector3f> pts = new ArrayList<>(RING_SEGMENTS + 1);
+      float[] widths = new float[RING_SEGMENTS + 1];
+      float[] alphas = new float[RING_SEGMENTS + 1];
+      for (int i = 0; i <= RING_SEGMENTS; i++) {
+         float k = (float)i / RING_SEGMENTS;
+         float ang = FxMath.TAU * k + spin;
+         Vector3f p = new Vector3f(center)
+            .fma(radius * (float)Math.cos(ang), u)
+            .fma(radius * (float)Math.sin(ang), v);
+         pts.add(p);
+         float wave = 0.45F + 0.55F * (float)Math.sin(k * FxMath.TAU + local * 0.35F * scar.spinSign);
+         widths[i] = w * (0.55F + 0.65F * wave);
+         alphas[i] = baseAlpha * (0.28F + 0.72F * wave);
+      }
+      g.ribbon(pts, widths, alphas, col[0], col[1], col[2]);
+   }
+
+   private void drawScarStreaks(FxGeometry g, ScarNode scar, Vector3f center, float local, float swirl) {
+      float maxR = (0.95F + 0.45F * swirl) * scar.visualScale;
+      for (int i = 0; i < scar.streakAzimuth.length; i++) {
+         float phase = ((local * scar.streakSpeed[i] + scar.streakPhase[i]) % 1.0F + 1.0F) % 1.0F;
+         float headP = FxMath.easeInCubic(phase);
+         float tailP = FxMath.easeInCubic(Math.max(0.0F, phase - 0.15F));
+         float rHead = maxR * (1.0F - headP);
+         float rTail = maxR * (1.0F - tailP);
+         float angHead = scar.streakAzimuth[i] + scar.spinSign * headP * 3.8F;
+         float angTail = scar.streakAzimuth[i] + scar.spinSign * tailP * 3.8F;
+
+         Vector3f head = new Vector3f(center)
+            .fma(rHead * (float)Math.cos(angHead), scar.across)
+            .fma(rHead * (float)Math.sin(angHead), scar.faceNormal)
+            .fma(scar.streakAxial[i] * scar.halfHeight * (1.0F - headP), scar.spine);
+         Vector3f tail = new Vector3f(center)
+            .fma(rTail * (float)Math.cos(angTail), scar.across)
+            .fma(rTail * (float)Math.sin(angTail), scar.faceNormal)
+            .fma(scar.streakAxial[i] * scar.halfHeight * (1.0F - tailP), scar.spine);
+
+         float alpha = (float)Math.sin(Math.PI * phase) * swirl * 0.85F;
+         float[] col = i % 4 == 0 ? WHITE_HOT : (i % 2 == 0 ? MAGENTA : VIOLET);
+         g.streak(head, tail, 0.020F * scar.visualScale, col[0], col[1], col[2], alpha);
+      }
+   }
+
+   private void emitScarShards(
+      FxGeometry g, ScarNode scar, Vector3f center, float local, float crack, float swirl, boolean bodyPass
+   ) {
+      float pull = 0.25F + 0.75F * swirl;
+      for (int i = 0; i < scar.splinters.size(); i++) {
+         ScarSplinter sp = scar.splinters.get(i);
+         float orbit = sp.phase + scar.spinSign * local * sp.spin;
+         float r = sp.radius * pull * scar.visualScale;
+         float bob = (float)Math.sin(local * 0.18F + sp.phase) * 0.07F * scar.visualScale;
+         Vector3f pos = new Vector3f(center)
+            .fma(sp.along * scar.halfHeight * (0.45F + 0.55F * crack), scar.spine)
+            .fma(r * (float)Math.cos(orbit), scar.across)
+            .fma(r * (float)Math.sin(orbit), scar.faceNormal);
+         pos.y += bob;
+
+         Vector3f fwd = new Vector3f(scar.across).mul(-(float)Math.sin(orbit) * scar.spinSign)
+            .fma((float)Math.cos(orbit) * scar.spinSign, scar.faceNormal)
+            .fma(0.25F, scar.spine)
+            .normalize();
+         Vector3f right = FxMath.perpendicular(fwd);
+         Vector3f up = new Vector3f(fwd).cross(right).normalize();
+
+         float len = sp.length * (0.35F + 0.65F * crack);
+         float[] col = bodyPass ? DEEP_BODY : (sp.cyanAccent ? PRISM_CYAN : (i % 2 == 0 ? MAGENTA : VIOLET));
+         g.bladeShard(pos, fwd, right, up, len, len * 0.42F, len * 0.13F, len * 0.08F, col[0], col[1], col[2], (bodyPass ? 0.92F : 0.68F) * crack);
+      }
+   }
+
+   // ───────────────────────────── B 档全屏通道：16 处旋涡扭曲色散 + 8 处 3D 体积纺锤裂壳 ─────────────────────────────
+
+   @Override
+   public void collectPasses(FxFrame frame, List<FxPass> out) {
+      if (this.scars.isEmpty()) {
+         return;
+      }
+      float t = this.age(frame.partialTick);
+      float aspect = frame.width / Math.max(1.0F, (float)frame.height);
+
+      List<ProjectedScar> visible = new ArrayList<>();
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local < 0.0F || local > scar.duration) {
+            continue;
+         }
+         float swirl = swirlCurve(local, scar.duration, scar.seedPhase);
+         float crack = crackOpenCurve(local, scar.duration, scar.seedPhase);
+         float lenScale = lengthScale(local, scar.duration);
+         if ((swirl <= 0.005F && crack <= 0.005F) || lenScale <= 0.01F) {
+            continue;
+         }
+         Vector3f rel = frame.rel(scar.center);
+         float viewDist = rel.length();
+         if (viewDist > 160.0F || viewDist < 0.45F) {
+            continue;
+         }
+         float[] uvCenter = frame.screenUv(scar.center);
+         if (uvCenter == null || uvCenter[0] < -0.45F || uvCenter[0] > 1.45F || uvCenter[1] < -0.45F || uvCenter[1] > 1.45F) {
+            continue;
+         }
+
+         float halfH = scar.halfHeight * lenScale;
+         Vec3 topWorld = scar.center.add(scar.spine.x * halfH, scar.spine.y * halfH, scar.spine.z * halfH);
+         Vec3 botWorld = scar.center.subtract(scar.spine.x * halfH, scar.spine.y * halfH, scar.spine.z * halfH);
+         float[] uvTop = frame.screenUv(topWorld);
+         float[] uvBot = frame.screenUv(botWorld);
+
+         float tiltAngle = (float)(Math.PI * 0.5);
+         float halfLenScreen;
+         if (uvTop != null && uvBot != null) {
+            float dx = (uvTop[0] - uvBot[0]) * aspect;
+            float dy = uvTop[1] - uvBot[1];
+            float span = (float)Math.sqrt(dx * dx + dy * dy);
+            if (span > 1.0E-4F) {
+               tiltAngle = (float)Math.atan2(dy, dx);
+               halfLenScreen = span * 0.5F;
+            } else {
+               halfLenScreen = halfH / Math.max(viewDist, 1.4F) * 0.76F;
+            }
+         } else {
+            halfLenScreen = halfH / Math.max(viewDist, 1.4F) * 0.76F;
+         }
+         halfLenScreen = Mth.clamp(halfLenScreen, 0.028F, 0.44F);
+
+         // 超出屏幕边界过多且自身柔焦外包圆又摸不到屏幕的裂痕跳过，避免浪费宝贵槽位
+         if (Math.abs(uvCenter[0] - 0.5F) > 0.55F + halfLenScreen * 2.15F
+               || Math.abs(uvCenter[1] - 0.5F) > 0.55F + halfLenScreen * 2.15F) {
+            continue;
+         }
+
+         float signedTwist = scar.spinSign * scar.twistBase * swirl;
+         float centerBias = 1.0F / (0.22F + (float)Math.hypot(uvCenter[0] - 0.5F, uvCenter[1] - 0.5F));
+         float score = (halfLenScreen * 3.0F + swirl + crack * 0.6F) * centerBias / (1.0F + viewDist * 0.04F);
+         visible.add(new ProjectedScar(
+            scar, rel, viewDist, uvCenter[0], uvCenter[1], halfLenScreen, tiltAngle, signedTwist, crack, swirl,
+            halfH, openFlashCurve(local), alignGlintCurve(local, scar.duration), score
+         ));
+      }
+
+      if (visible.isEmpty()) {
+         return;
+      }
+      visible.sort(Comparator.comparingDouble((ProjectedScar a) -> a.score).reversed());
+
+      // 1. 场景通道：单 Pass 打包最多 16 处裂界同源时空裂痕的旋涡扭转与虹彩色散
+      if (FxShaders.foldScene != null) {
+         int sceneCount = Math.min(MAX_SCENE_SCARS, visible.size());
+         float[][] packed = new float[8][16];
+         for (int i = 0; i < sceneCount; i++) {
+            ProjectedScar ps = visible.get(i);
+            float[] m = packed[i >> 1];
+            int base = (i & 1) << 3;
+            m[base] = ps.u;
+            m[base + 1] = ps.v;
+            m[base + 2] = ps.halfLenScreen;
+            m[base + 3] = ps.viewDist;
+            m[base + 4] = ps.tiltAngle;
+            m[base + 5] = ps.signedTwist;
+            m[base + 6] = ps.crack;
+            m[base + 7] = ps.scar.seedPhase;
+         }
+         Matrix4f matA = new Matrix4f().set(packed[0]);
+         Matrix4f matB = new Matrix4f().set(packed[1]);
+         Matrix4f matC = new Matrix4f().set(packed[2]);
+         Matrix4f matD = new Matrix4f().set(packed[3]);
+         Matrix4f matE = new Matrix4f().set(packed[4]);
+         Matrix4f matF = new Matrix4f().set(packed[5]);
+         Matrix4f matG = new Matrix4f().set(packed[6]);
+         Matrix4f matH = new Matrix4f().set(packed[7]);
+         final int finalCount = sceneCount;
+         out.add(new FxPass(FxPass.Kind.SCENE, () -> FxShaders.foldScene, shader -> {
+            shader.safeGetUniform("RiftA").set(matA);
+            shader.safeGetUniform("RiftB").set(matB);
+            shader.safeGetUniform("RiftC").set(matC);
+            shader.safeGetUniform("RiftD").set(matD);
+            shader.safeGetUniform("RiftE").set(matE);
+            shader.safeGetUniform("RiftF").set(matF);
+            shader.safeGetUniform("RiftG").set(matG);
+            shader.safeGetUniform("RiftH").set(matH);
+            shader.safeGetUniform("Meta").set((float)finalCount, 1.15F, 1.05F, 1.0F);
+         }));
+      }
+
+      // 2. 体积通道：单 Pass 打包最多 8 处裂痕的纺锤引力壳 + 锁步 3D 唇面 + 地形截交切痕
+      if (FxShaders.foldVolume != null) {
+         int volCount = Math.min(MAX_VOLUME_SCARS, visible.size());
+         float[][] volPacked = new float[8][16];
+         for (int i = 0; i < volCount; i++) {
+            ProjectedScar ps = visible.get(i);
+            float[] m = volPacked[i];
+            m[0] = ps.rel.x;
+            m[1] = ps.rel.y;
+            m[2] = ps.rel.z;
+            m[3] = ps.worldHalfH;
+            m[4] = ps.scar.spine.x;
+            m[5] = ps.scar.spine.y;
+            m[6] = ps.scar.spine.z;
+            m[7] = ps.crack;
+            m[8] = ps.scar.faceNormal.x;
+            m[9] = ps.scar.faceNormal.y;
+            m[10] = ps.scar.faceNormal.z;
+            m[11] = ps.scar.spinSign * Math.max(0.25F, ps.swirl);
+            m[12] = ps.scar.seedPhase;
+            m[13] = ps.openFlash;
+            m[14] = ps.alignGlint;
+            m[15] = 0.0F;
+         }
+         Matrix4f volA = new Matrix4f().set(volPacked[0]);
+         Matrix4f volB = new Matrix4f().set(volPacked[1]);
+         Matrix4f volC = new Matrix4f().set(volPacked[2]);
+         Matrix4f volD = new Matrix4f().set(volPacked[3]);
+         Matrix4f volE = new Matrix4f().set(volPacked[4]);
+         Matrix4f volF = new Matrix4f().set(volPacked[5]);
+         Matrix4f volG = new Matrix4f().set(volPacked[6]);
+         Matrix4f volH = new Matrix4f().set(volPacked[7]);
+         final int finalVolCount = volCount;
+         out.add(new FxPass(FxPass.Kind.VOLUME, () -> FxShaders.foldVolume, shader -> {
+            shader.safeGetUniform("ScarA").set(volA);
+            shader.safeGetUniform("ScarB").set(volB);
+            shader.safeGetUniform("ScarC").set(volC);
+            shader.safeGetUniform("ScarD").set(volD);
+            shader.safeGetUniform("ScarE").set(volE);
+            shader.safeGetUniform("ScarF").set(volF);
+            shader.safeGetUniform("ScarG").set(volG);
+            shader.safeGetUniform("ScarH").set(volH);
+            shader.safeGetUniform("Meta").set((float)finalVolCount, 1.0F, 0.0F, 0.0F);
+         }));
+      }
+   }
+
+   // ───────────────────────────── 克制的初裂镜头微颤（滞留期零干扰） ─────────────────────────────
+
+   @Override
+   public void screen(FxFrame frame, FxScreenState screen) {
+      float t = this.age(frame.partialTick);
+      float peakOpen = 0.0F;
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local >= 0.0F && local <= 4.5F) {
+            peakOpen = Math.max(peakOpen, openFlashCurve(local));
          }
       }
-      return null;
+      if (peakOpen > 0.02F) {
+         screen.addAberration(0.26F * peakOpen);
+         screen.addFovKick(-0.022F * peakOpen);
+      }
    }
 
-   /** 因果倒流光珠的位置：从最后一个节点逆向回到第一个节点。 */
-   private Vec3 beadBackward(float t) {
-      int n = this.count();
-      if (n < 1 || t < this.collapse[n] || t >= this.finalAt) {
-         return null;
-      }
-      for (int j = n; j >= 2; j--) {
-         if (t < this.collapse[j - 1]) {
-            double k = FxMath.window(t, this.collapse[j], this.collapse[j - 1]);
-            return this.nodes.get(j).lerp(this.nodes.get(j - 1), k);
+   @Override
+   public float shake(FxFrame frame) {
+      float t = this.age(frame.partialTick);
+      float peakOpen = 0.0F;
+      for (ScarNode scar : this.scars) {
+         float local = t - scar.startAge;
+         if (local >= 0.0F && local <= 4.5F) {
+            peakOpen = Math.max(peakOpen, openFlashCurve(local));
          }
       }
-      return this.nodes.get(1);
+      return 0.22F * peakOpen;
    }
 
-   private float knotRadius(int i) {
-      return Math.max(0.55F, this.heights.get(i) * 0.45F) * this.scale;
-   }
+   // ───────────────────────────── 内部数据结构 ─────────────────────────────
 
-   /** 锁环与钟面的整体缩放：旋入 1.6 → 1，坍缩时塌缩到 0。 */
-   private float knotScale(int i, float t) {
-      float a = t - this.arrive[i];
-      if (a < 0.0F) {
-         return 0.0F;
-      }
-      float spinIn = 1.6F - 0.6F * FxMath.easeOutCubic(FxMath.window(a, 0.0F, KNOT_LOCK));
-      float implode = 1.0F - FxMath.easeInCubic(FxMath.window(t, this.collapse[i], this.collapse[i] + 1.5F));
-      return spinIn * implode;
-   }
+   private static final class ScarNode {
+      final Vec3 center;
+      final float halfHeight;
+      final float visualScale;
+      final Vector3f spine;
+      final Vector3f faceNormal;
+      final Vector3f across;
+      final Vector3f ringNormal;
+      final int startAge;
+      final int duration;
+      final float seedPhase;
+      final float spinSign;
+      final float twistBase;
+      final float[] streakAzimuth = new float[STREAKS_PER_SCAR];
+      final float[] streakAxial = new float[STREAKS_PER_SCAR];
+      final float[] streakSpeed = new float[STREAKS_PER_SCAR];
+      final float[] streakPhase = new float[STREAKS_PER_SCAR];
+      final List<ScarSplinter> splinters = new ArrayList<>(SHARDS_PER_SCAR);
+      boolean openSoundPlayed;
+      boolean closeSoundPlayed;
 
-   private void drawKnotRings(FxGeometry g, FxFrame frame, int i, float t) {
-      float size = this.knotScale(i, t);
-      if (size <= 0.01F) {
-         return;
-      }
-      float a = t - this.arrive[i];
-      float theta = a < KNOT_LOCK ? a * 1.6F : KNOT_LOCK * 1.6F + (a - KNOT_LOCK) * 0.15F;
-      float alpha = FxMath.window(a, 0.0F, 0.6F);
-      Vec3 axisA = UP.scale(Math.cos(theta)).add(this.knotAxisA[i].scale(Math.sin(theta)));
-      Vec3 axisB = this.knotAxisB[i].scale(Math.cos(theta * 0.7)).add(UP.scale(Math.sin(theta * 0.7) * 0.4));
-      Vector3f c = frame.rel(this.nodes.get(i));
-      float fade = alpha * nearFade(c);
-      float radius = this.knotRadius(i) * size;
-      g.torus(c, toVector(axisA.normalize()), radius, 0.035F * this.scale, 28, 5, theta, GOLD[0], GOLD[1], GOLD[2], fade);
-      g.torus(c, toVector(axisB.normalize()), radius * 0.82F, 0.03F * this.scale, 24, 5, -theta, PALE_GOLD[0], PALE_GOLD[1], PALE_GOLD[2], fade);
-   }
+      ScarNode(
+         Vec3 center, float halfHeight, float visualScale, Vector3f spine, Vector3f faceNormal,
+         Vector3f across, Vector3f ringNormal, int startAge, int duration, float seedPhase,
+         float spinSign, float twistBase, RandomSource random
+      ) {
+         this.center = center;
+         this.halfHeight = halfHeight;
+         this.visualScale = visualScale;
+         this.spine = spine;
+         this.faceNormal = faceNormal;
+         this.across = across;
+         this.ringNormal = ringNormal;
+         this.startAge = startAge;
+         this.duration = duration;
+         this.seedPhase = seedPhase;
+         this.spinSign = spinSign;
+         this.twistBase = twistBase;
 
-   private void drawDial(FxGeometry g, FxFrame frame, int i, float t) {
-      float size = this.knotScale(i, t);
-      if (size <= 0.01F) {
-         return;
+         for (int i = 0; i < STREAKS_PER_SCAR; i++) {
+            this.streakAzimuth[i] = random.nextFloat() * FxMath.TAU;
+            this.streakAxial[i] = (random.nextFloat() - 0.5F) * 1.4F;
+            this.streakSpeed[i] = 0.045F + random.nextFloat() * 0.045F;
+            this.streakPhase[i] = random.nextFloat();
+         }
+         for (int i = 0; i < SHARDS_PER_SCAR; i++) {
+            float along = (random.nextFloat() * 1.40F - 0.70F);
+            float radius = 0.24F + random.nextFloat() * 0.36F;
+            float len = (0.10F + random.nextFloat() * 0.11F) * visualScale;
+            float spin = 0.05F + random.nextFloat() * 0.07F;
+            this.splinters.add(new ScarSplinter(along, radius, len, spin, i == 0 || i == 4, random.nextFloat() * FxMath.TAU));
+         }
       }
-      float a = t - this.arrive[i];
-      float rotation = -a * 0.05F;
-      // 因果倒流：坍缩前后刻度飞速逆转
-      rotation += FxMath.easeInCubic(FxMath.window(t, this.collapse[i] - 0.5F, this.collapse[i] + 1.5F)) * (float)(Math.PI * 6.0);
-      Vector3f c = frame.rel(this.nodes.get(i));
-      float radius = this.knotRadius(i) * 1.25F * size / 0.95F;
-      float cos = (float)Math.cos(rotation);
-      float sin = (float)Math.sin(rotation);
-      Vector3f u = new Vector3f(frame.left).mul(cos).add(new Vector3f(frame.up).mul(sin)).mul(radius);
-      Vector3f v = new Vector3f(frame.up).mul(cos).sub(new Vector3f(frame.left).mul(sin)).mul(radius);
-      g.quad(c, u, v, CYAN[0], CYAN[1], CYAN[2], FxMath.window(a, 0.5F, 1.5F) * 0.8F * nearFade(c));
-   }
 
-   /** 反向涟漪：坍缩时两圈环（水平 + 正对相机）由外向内收拢，越收越亮。 */
-   private void drawInverseRipple(FxGeometry g, FxFrame frame, int i, float t) {
-      float e = t - this.collapse[i];
-      if (e < 0.0F || e >= 3.0F) {
-         return;
-      }
-      float k = e / 3.0F;
-      float radius = this.knotRadius(i) * 2.6F * (1.0F - FxMath.easeInCubic(k)) / 0.95F + 0.02F;
-      float alpha = (0.3F + 0.7F * k) * (1.0F - FxMath.window(e, 2.6F, 3.0F));
-      Vector3f c = frame.rel(this.nodes.get(i));
-      float fade = alpha * nearFade(c);
-      g.quad(c, new Vector3f(radius, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, radius), CYAN[0], CYAN[1], CYAN[2], fade);
-      g.quad(c, new Vector3f(frame.left).mul(radius * 0.8F), new Vector3f(frame.up).mul(radius * 0.8F), WHITE[0], WHITE[1], WHITE[2], fade * 0.7F);
-   }
-
-   /** 因果闭环：第一个节点处的水平金环猛然合拢，随后散开一圈淡光。 */
-   private void drawFinalRings(FxGeometry g, FxFrame frame, float t) {
-      float e = t - this.finalAt;
-      if (e < 0.0F || e >= FINAL_LIFE) {
-         return;
-      }
-      Vector3f c = frame.rel(this.nodes.get(1));
-      float base = 3.2F * this.scale;
-      if (e < 6.0F) {
-         float snap = FxMath.easeInCubic(FxMath.window(e, 0.0F, SNAP));
-         float radius = (base - (base - 0.35F * this.scale) * snap) / 0.95F;
-         float alpha = FxMath.window(e, 0.0F, 0.5F) * (1.0F - FxMath.window(e, 4.0F, 6.0F));
-         g.quad(c, new Vector3f(radius, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, radius), GOLD[0], GOLD[1], GOLD[2], alpha * nearFade(c));
-      }
-      if (e >= SNAP) {
-         float k = FxMath.window(e, SNAP, FINAL_LIFE);
-         float radius = (0.35F + 5.0F * FxMath.easeOutCubic(k)) * this.scale / 0.95F;
-         g.quad(c, new Vector3f(radius, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, radius), PALE_GOLD[0], PALE_GOLD[1], PALE_GOLD[2], (1.0F - k) * (1.0F - k) * nearFade(c));
+      /** 与 fx_fold_scene / fx_fold_volume 完全锁步的紧致三频裂隙脊线采样。 */
+      float jagSample(float u) {
+         return (float)(
+            Math.sin(u * 3.8 + this.seedPhase) * 0.042
+               + Math.sin(u * 10.5 + this.seedPhase * 2.1) * 0.018
+               + Math.cos(u * 21.0 + this.seedPhase * 3.3) * 0.008
+         );
       }
    }
 
-   private static Vector3f toVector(Vec3 v) {
-      return new Vector3f((float)v.x, (float)v.y, (float)v.z);
+   private static final class ScarSplinter {
+      final float along;
+      final float radius;
+      final float length;
+      final float spin;
+      final boolean cyanAccent;
+      final float phase;
+
+      ScarSplinter(float along, float radius, float length, float spin, boolean cyanAccent, float phase) {
+         this.along = along;
+         this.radius = radius;
+         this.length = length;
+         this.spin = spin;
+         this.cyanAccent = cyanAccent;
+         this.phase = phase;
+      }
+   }
+
+   private record ProjectedScar(
+      ScarNode scar, Vector3f rel, float viewDist,
+      float u, float v, float halfLenScreen, float tiltAngle, float signedTwist, float crack, float swirl,
+      float worldHalfH, float openFlash, float alignGlint, float score
+   ) {
    }
 }

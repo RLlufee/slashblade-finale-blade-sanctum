@@ -21,10 +21,11 @@ public final class ModNetwork {
     * 8：移除已废弃的 TERMINUS_MARK（11）与 ABYSSAL_DECREE（17）特效事件；
     * 9：重构幻影审判（PHANTOM_JUDGEMENT）为千刃星流五幕导演级同步协议；
     * 10：虚无权域改为持续阶段同步，并为关联目标附带处决 tick；
-    * 11：裂界重制为万花筒神威双模式持续同步协议（独立单链跳跃 + 断空联动残骸扭杀）。
+    * 11：裂界重制为万花筒神威双模式持续同步协议（独立单链跳跃 + 断空联动残骸扭杀）；
+    * 12：因果坍缩重制为多点局部 UV 错位因果裂痕协议（量化逐目标 3D 坐标 + 客户端池化合并，支持神威双模式联动与独立空挥）。
     * 新旧版本客户端/服务端互相拒绝连接，避免解析错乱或特效缺失。
     */
-   private static final String PROTOCOL_VERSION = "11";
+   private static final String PROTOCOL_VERSION = "12";
    private static int messageId;
    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
       ResourceLocation.fromNamespaceAndPath("annihilationblade", "main"), () -> PROTOCOL_VERSION, PROTOCOL_VERSION::equals, PROTOCOL_VERSION::equals

@@ -50,7 +50,7 @@ public final class FxClientDispatcher {
       FACTORIES.put(FxTypes.LOLI_JUDGEMENT, LoliJudgementFx::new);
       FACTORIES.put(FxTypes.DANKONG, DankongFx::new);
       FACTORIES.put(FxTypes.WORLD_RIFT, WorldRiftFx::new);
-      FACTORIES.put(FxTypes.CAUSALITY_COLLAPSE, CausalityCollapseFx::new);
+      FACTORIES.put(FxTypes.CAUSALITY_COLLAPSE, CausalityCollapseFx::createOrAbsorb);
       FACTORIES.put(FxTypes.TERMINUS_ECHO, TerminusEchoFx::new);
       FACTORIES.put(FxTypes.STARLESS_JUDGEMENT, StarlessJudgementFx::new);
       FACTORIES.put(FxTypes.PHANTOM_JUDGEMENT, PhantomJudgementFx::new);

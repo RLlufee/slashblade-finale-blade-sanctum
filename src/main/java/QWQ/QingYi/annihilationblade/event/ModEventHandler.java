@@ -1,6 +1,7 @@
 package QWQ.QingYi.annihilationblade.event;
 
 import QWQ.QingYi.annihilationblade.annihilation_blade.AnnihilationBladeDefinitions;
+import QWQ.QingYi.annihilationblade.annihilation_blade.logic.AnnihilationInputRouter;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.WorldRiftChain;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.CausalityCollapse;
@@ -297,6 +298,7 @@ public class ModEventHandler {
       PLAYERS_WITH_FLIGHT.remove(id);
       HAS_BLADE_CACHE.remove(id);
       LAST_BLADE_SCAN_TICK.remove(id);
+      AnnihilationInputRouter.clearPlayer(id);
       Dankong.clearPlayer(id);
       WorldRiftChain.clearPlayer(id);
       TerminusEcho.clearPlayer(id);

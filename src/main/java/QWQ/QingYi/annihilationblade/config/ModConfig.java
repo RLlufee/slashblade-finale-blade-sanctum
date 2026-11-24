@@ -227,7 +227,7 @@ public final class ModConfig {
          super("annihilation_blade.world_rift", "config.annihilationblade.annihilation_blade.world_rift.title");
          this.enabled = seEnabled("world_rift");
          this.dankongLinkage = boolValue("dankong_linkage", true, "config.annihilationblade.dankong_linkage.tooltip");
-         this.radius = doubleValue("radius", 8.0, 2.0, 32.0, "裂界单链索敌与空间扭曲半径，建议 6-14。", "World Rift chain search and warp radius. Suggested: 6-14.");
+         this.radius = doubleValue("radius", 12.0, 2.0, 32.0, "裂界单链索敌与空间扭曲半径，建议 6-14。", "World Rift chain search and warp radius. Suggested: 6-14.");
          this.maxTargets = intValue("max_targets", 24, 1, 96, "断空联动尸骸神威扭杀最大目标数，建议 12-36。", "Maximum targets for Dankong-linked Kamui corpse twist. Suggested: 12-36.");
          this.chainCount = intValue("chain_count", 3, 1, 10, "断空关闭时裂界单链最多跳跃次数，建议 3-5。", "Maximum standalone single-chain hop count while Dankong is disabled. Suggested: 3-5.");
          this.chainRange = doubleValue("chain_range", 256.0, 1.0, 1024.0, "裂界单链跳跃距最初攻击者的距离上限，建议 128-256。", "World Rift chain range cap from the original attacker. Suggested: 128-256.");
@@ -266,6 +266,7 @@ public final class ModConfig {
       public final DoubleEntry range;
       public final IntegerEntry maxTargets;
       public final IntegerEntry cooldownTicks;
+      public final IntegerEntry chordWindowTicks;
       public final DoubleEntry visualScale;
 
       private VoidDominion() {
@@ -274,23 +275,46 @@ public final class ModConfig {
          this.range = doubleValue("range", 26.0, 4.0, 64.0, "虚无权域半径，建议 16-36。", "Void Dominion radius. Suggested: 16-36.");
          this.maxTargets = intValue("max_targets", 64, 1, 160, "虚无权域最多影响目标数，建议 32-96。", "Maximum Void Dominion targets. Suggested: 32-96.");
          this.cooldownTicks = intValue("cooldown_ticks", 70, 0, 200, "触发冷却 tick，建议 50-100。", "Trigger cooldown in ticks. Suggested: 50-100.");
+         this.chordWindowTicks = intValue(
+            "chord_window_ticks", 2, 0, 6,
+            "左键+右键同时按下判定缓冲窗口（tick，20 tick = 1 秒），用于防止略微错帧按下时误先触发断空或幻影审判。建议 2-3。",
+            "Left+Right simultaneous press buffer window in ticks (20 ticks = 1s) to prevent accidental Dankong or Phantom Judgement misfire. Suggested: 2-3."
+         );
          this.visualScale = visualScale(1.0);
       }
    }
 
    public static final class CausalityCollapse extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
       public final BooleanEntry enabled;
-      public final DoubleEntry chainRadius;
-      public final IntegerEntry maxChain;
+      public final BooleanEntry worldRiftLinkage;
+      public final IntegerEntry scarDurationTicks;
+      public final DoubleEntry stasisRadius;
+      public final IntegerEntry stasisTicks;
+      public final IntegerEntry maxStasisTargets;
       public final IntegerEntry cooldownTicks;
       public final DoubleEntry visualScale;
 
       private CausalityCollapse() {
          super("annihilation_blade.causality_collapse", "config.annihilationblade.annihilation_blade.causality_collapse.title");
          this.enabled = seEnabled("causality_collapse");
-         this.chainRadius = doubleValue("chain_radius", 14.0, 2.0, 48.0, "因果链搜索半径，建议 8-20。", "Causality chain search radius. Suggested: 8-20.");
-         this.maxChain = intValue("max_chain", 18, 1, 96, "因果链最大目标数，建议 8-30。", "Maximum causality chain targets. Suggested: 8-30.");
-         this.cooldownTicks = intValue("cooldown_ticks", 10, 0, 100, "触发冷却 tick，建议 8-20。", "Trigger cooldown in ticks. Suggested: 8-20.");
+         this.worldRiftLinkage = boolValue("world_rift_linkage", true, "config.annihilationblade.world_rift_linkage.tooltip");
+         this.scarDurationTicks = intValue(
+            "scar_duration_ticks", 64, 20, 200,
+            "单道因果时空裂痕存续总时长（tick，20 tick = 1 秒，默认 64 tick ≈ 3.2 秒）。",
+            "Lifetime in ticks of each causal spacetime rift scar (20 ticks = 1s; default 64 ticks ≈ 3.2s)."
+         );
+         this.stasisRadius = doubleValue(
+            "stasis_radius", 4.5, 1.5, 16.0,
+            "单道因果裂痕初裂瞬间施加零伤害微扰定身的局部半径，建议 3-6。",
+            "Local radius around each causal rift scar for the zero-damage micro-stasis. Suggested: 3-6."
+         );
+         this.stasisTicks = intValue(
+            "stasis_ticks", 6, 0, 20,
+            "裂痕初裂瞬间对局部范围内敌对生物施加的零伤害微扰定身时长（tick，6 tick = 0.3 秒；设为 0 则纯观赏无定身）。",
+            "Duration in ticks of the zero-damage micro-stasis applied on rift crack (6 ticks = 0.3s; 0 for pure visual)."
+         );
+         this.maxStasisTargets = intValue("max_stasis_targets", 32, 1, 96, "单次裂痕最多施加微扰定身的敌对生物数，建议 16-48。", "Maximum hostile targets affected by rift micro-stasis. Suggested: 16-48.");
+         this.cooldownTicks = intValue("cooldown_ticks", 16, 0, 120, "独立空挥触发单道因果裂痕的冷却 tick，建议 12-30（神威联动不受此冷却限制）。", "Standalone air-slash causal rift cooldown in ticks. Suggested: 12-30 (World Rift linkage ignores this cooldown).");
          this.visualScale = visualScale(1.0);
       }
    }

@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
-import mods.flammpfeil.slashblade.event.SlashBladeEvent.DoSlashEvent;
 import mods.flammpfeil.slashblade.registry.specialeffects.SpecialEffect;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -83,31 +82,36 @@ public class VoidDominion extends SpecialEffect {
       SUSPENSIONS.clear();
    }
 
-   @SubscribeEvent
-   public static void onDoingSlash(DoSlashEvent event) {
-      if (!(event.getUser() instanceof ServerPlayer player) || Dankong.isActive(player)) {
-         return;
-      }
+   public static boolean isEntitySuspended(UUID entityUuid) {
+      return SUSPENSIONS.containsKey(entityUuid);
+   }
 
-      ISlashBladeState state = event.getSlashBladeState();
+   /** 判断当前玩家与持刀状态是否具备触发「虚无权域」左+右并发组合技的资格（已挂载、开启、未在激活与冷却中）。 */
+   public static boolean canAcceptChord(ServerPlayer player, ISlashBladeState state) {
+      if (player == null || state == null || Dankong.isActive(player)) {
+         return false;
+      }
       if (!state.hasSpecialEffect(ModSpecialEffects.VOID_DOMINION.getId())) {
-         return;
+         return false;
+      }
+      ModConfig.VoidDominion config = ModConfig.COMMON.annihilationBlade.voidDominion;
+      if (!config.enabled.getValue() || ACTIVE.containsKey(player.getUUID())) {
+         return false;
+      }
+      long gameTime = player.level().getGameTime();
+      int cooldown = Math.max(config.cooldownTicks.getValue(), VoidDominionPattern.TOTAL_LIFETIME);
+      long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -cooldown * 2L);
+      return gameTime - last >= cooldown;
+   }
+
+   /** 由 {@code AnnihilationInputRouter} 在左键 + 右键同时按下上升沿调用，展开五幕虚无权域（无目标不触发）。 */
+   public static boolean tryTriggerFromChord(ServerPlayer player, ISlashBladeState state) {
+      if (!canAcceptChord(player, state)) {
+         return false;
       }
 
       ModConfig.VoidDominion config = ModConfig.COMMON.annihilationBlade.voidDominion;
-      if (!config.enabled.getValue() || ACTIVE.containsKey(player.getUUID())) {
-         return;
-      }
-
       long gameTime = player.level().getGameTime();
-      int configuredCooldown = config.cooldownTicks.getValue();
-      // 防止 92 tick 的收尾尚未完成时同屏展开第二座权域。
-      int cooldown = Math.max(configuredCooldown, VoidDominionPattern.TOTAL_LIFETIME);
-      long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -cooldown * 2L);
-      if (gameTime - last < cooldown) {
-         return;
-      }
-
       ServerLevel level = player.serverLevel();
       double range = config.range.getValue();
       double visualScale = config.visualScale.getValue();
@@ -119,7 +123,7 @@ public class VoidDominion extends SpecialEffect {
          SpecialEffectSupport.radialTargets(level, player, center, range), Math.max(1, config.maxTargets.getValue())
       );
       if (targets.isEmpty()) {
-         return;
+         return false;
       }
 
       List<TargetPlan> plans = new ArrayList<>(targets.size());
@@ -134,6 +138,7 @@ public class VoidDominion extends SpecialEffect {
       );
       ACTIVE.put(player.getUUID(), new DominionSequence(player, level, handle, center, range, visualScale, seed, plans));
       LAST_TRIGGER.put(player.getUUID(), gameTime);
+      return true;
    }
 
    @SubscribeEvent

@@ -127,6 +127,7 @@ public final class WorldRiftFx extends FxInstance {
    private void applyPacket(ClientLevel level, FxEventPacket packet, boolean initial) {
       int kind = AnnihilationFxEvents.worldRiftKind(packet.intParam());
       int hopIndex = AnnihilationFxEvents.worldRiftHop(packet.intParam());
+      boolean causalityHandoff = AnnihilationFxEvents.worldRiftCausalityHandoff(packet.intParam());
       int[] ids = packet.entityIds();
       int[] ticks = packet.targetTicks();
 
@@ -138,6 +139,7 @@ public final class WorldRiftFx extends FxInstance {
             int entityId = ids.length > 0 ? ids[0] : -1;
             int snapOffset = ticks.length > 0 && ticks[0] > 0 ? ticks[0] : WorldRiftPattern.SNAP_TICK;
             VortexNode node = this.createNode(level, entityId, packet.origin(), Vec3.ZERO, false, hopIndex, this.age, this.age + snapOffset);
+            node.causalityHandoff = causalityHandoff;
             this.registerNode(node);
             this.ensureLifeFor(node.endAge());
          }
@@ -153,6 +155,7 @@ public final class WorldRiftFx extends FxInstance {
                this.registerNode(node);
             }
             if (node != null) {
+               node.causalityHandoff |= causalityHandoff;
                this.refreshEntityPose(level, node, true);
                node.center = packet.origin();
                node.foot = packet.origin().subtract(0.0, node.height * 0.56, 0.0);
@@ -173,6 +176,7 @@ public final class WorldRiftFx extends FxInstance {
             int snapOffset = ticks.length > 0 && ticks[0] > 0 ? ticks[0] : WorldRiftPattern.SNAP_TICK;
             Vec3 hopDir = packet.origin().subtract(from);
             VortexNode node = this.createNode(level, entityId, packet.origin(), hopDir, false, hopIndex, this.age, this.age + snapOffset);
+            node.causalityHandoff = causalityHandoff;
             this.registerNode(node);
             if (from.distanceToSqr(packet.origin()) > 0.25) {
                HopBridge bridge = new HopBridge(from, packet.origin(), this.age, 9, this.random.nextLong());
@@ -215,6 +219,7 @@ public final class WorldRiftFx extends FxInstance {
                   node.startAge = this.age + stagger;
                   node.snapAge = node.startAge + WorldRiftPattern.LINKAGE_SNAP_OFFSET;
                   node.snapped = true;
+                  node.causalityHandoff |= causalityHandoff;
                   maxEnd = Math.max(maxEnd, node.endAge());
                }
             }
@@ -224,6 +229,7 @@ public final class WorldRiftFx extends FxInstance {
                   node.startAge = this.age;
                   node.snapAge = this.age + WorldRiftPattern.LINKAGE_SNAP_OFFSET;
                   node.snapped = true;
+                  node.causalityHandoff |= causalityHandoff;
                   maxEnd = Math.max(maxEnd, node.endAge());
                }
             }
@@ -951,8 +957,8 @@ public final class WorldRiftFx extends FxInstance {
          }
       }
 
-      // 2. 空间弹性回弹细环余波（prog 0.14 -> 1.0）：极细锐利品红/虚空紫波纹随空间复原向外弹散
-      if (prog >= 0.14F) {
+      // 2. 空间弹性回弹细环余波（若由因果坍缩接管裂痕，则跳过回弹复原环，让扭曲直接塌缩过渡给因果裂痕）
+      if (!node.causalityHandoff && prog >= 0.14F) {
          float rk = (prog - 0.14F) / 0.86F;
          float ringAlpha = (1.0F - rk) * (1.0F - rk) * nf;
          if (ringAlpha > 0.005F) {
@@ -1310,6 +1316,7 @@ public final class WorldRiftFx extends FxInstance {
       int startAge;
       int snapAge;
       boolean snapped;
+      boolean causalityHandoff;
       boolean openSoundPlayed;
       boolean tensionSoundPlayed;
       boolean snapSoundPlayed;
@@ -1444,9 +1451,19 @@ public final class WorldRiftFx extends FxInstance {
          float reboundStart = sealStart;
          float reboundEnd = sealStart + 4.5F;
 
-         // 弹性回弹段：空间瞬间反向微过冲再平复
+         // 弹性回弹段：若随后紧跟因果坍缩接管，则保持正向顺滑过渡，不反向弹回抹平空间扭曲
          if (local >= reboundStart && local < reboundEnd) {
             float rProg = (local - reboundStart) / (reboundEnd - reboundStart);
+            if (this.causalityHandoff) {
+               float handoffFade = 1.0F - FxMath.easeOutCubic(rProg);
+               return new VortexWarp(
+                  this.spinSign * 10.5F * handoffFade,
+                  0.36F * handoffFade,
+                  0.06F * handoffFade,
+                  0.85F * handoffFade,
+                  0.25F * (1.0F - rProg)
+               );
+            }
             float bounce = (float)Math.sin(Math.PI * rProg) * (1.0F - rProg);
             return new VortexWarp(
                -this.spinSign * 2.4F * bounce,

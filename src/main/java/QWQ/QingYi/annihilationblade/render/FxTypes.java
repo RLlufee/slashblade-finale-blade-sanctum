@@ -41,8 +41,10 @@ public final class FxTypes {
     */
    public static final int WORLD_RIFT = 13;
    /**
-    * 湮灭之刃 SE「因果坍缩·连锁抹消」（一次性）。origin = 链起点（施法者刀身），direction = 视线，
-    * radius = 链半径 × 视觉倍率，scale = 视觉倍率，entityIds = 按链顺序排列的目标。
+    * 湮灭之刃 SE「因果坍缩·错位裂痕」（一次性发包 + 客户端自动池化合并）。
+    * origin = 参考原点，direction = 施法者视线参考，radius = 裂痕局部覆盖包络，scale = 视觉倍率，
+    * intParam 打包模式与存续时长（见 {@code AnnihilationFxEvents.packCausality}），
+    * entityIds / targetTicks 按索引成对量化编码每道裂痕相对 origin 的 3D 坐标 (dx, dy, dz)、目标身形高度与错峰起裂 tick。
     */
    public static final int CAUSALITY_COLLAPSE = 14;
    /**

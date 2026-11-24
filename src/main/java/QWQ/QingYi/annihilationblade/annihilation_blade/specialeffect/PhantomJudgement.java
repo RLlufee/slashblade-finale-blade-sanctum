@@ -1,18 +1,14 @@
 package QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect;
 
-import QWQ.QingYi.annihilationblade.Annihilationblade;
+import QWQ.QingYi.annihilationblade.annihilation_blade.logic.AnnihilationInputRouter;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.PhantomJudgementPattern;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
 import QWQ.QingYi.annihilationblade.registry.ModSpecialEffects;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -23,7 +19,6 @@ import java.util.UUID;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
 import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import mods.flammpfeil.slashblade.registry.specialeffects.SpecialEffect;
-import mods.flammpfeil.slashblade.util.InputCommand;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -33,11 +28,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent.Phase;
 import net.minecraftforge.event.TickEvent.PlayerTickEvent;
-import net.minecraftforge.eventbus.api.Event;
-import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
@@ -57,68 +49,16 @@ import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 public class PhantomJudgement extends SpecialEffect {
    /** 单玩家同屏允许并发推进的千刃星流序列上限（20t 冷却下 56t 寿命正常最多并发 3 组，留 1 组余量防 0 冷却刷爆）。 */
    private static final int MAX_ACTIVE_SEQUENCES = 4;
-   /**
-    * 兼容新旧版本 SlashBlade Resharped 的 InputCommandEvent 包路径：
-    * 1.9.x 新版位于 event.handler，旧版（如 6164820）位于 event。
-    */
-   private static final String[] INPUT_EVENT_CANDIDATES = {
-      "mods.flammpfeil.slashblade.event.handler.InputCommandEvent",
-      "mods.flammpfeil.slashblade.event.InputCommandEvent"
-   };
    private static final Map<UUID, List<Sequence>> ACTIVE = new HashMap<>();
    private static final Map<UUID, Long> LAST_TRIGGER = new HashMap<>();
-   private static boolean inputListenerRegistered = false;
 
    public PhantomJudgement() {
       super(0, false, false);
    }
 
-   /**
-    * 运行时探测并动态绑定拔刀剑 InputCommandEvent，避免跨 SlashBlade 版本包路径差异导致 FML 加载期 NoClassDefFoundError。
-    */
+   /** 保留对外入口并委托给 {@link AnnihilationInputRouter} 统一完成输入监听注册。 */
    public static void registerInputListener() {
-      if (inputListenerRegistered) {
-         return;
-      }
-      ClassLoader loader = PhantomJudgement.class.getClassLoader();
-      MethodHandles.Lookup lookup = MethodHandles.publicLookup();
-      for (String className : INPUT_EVENT_CANDIDATES) {
-         try {
-            Class<?> rawClass = Class.forName(className, false, loader);
-            if (!Event.class.isAssignableFrom(rawClass)) {
-               continue;
-            }
-            MethodHandle getEntity = lookup.findVirtual(rawClass, "getEntity", MethodType.methodType(ServerPlayer.class));
-            MethodHandle getOld = lookup.findVirtual(rawClass, "getOld", MethodType.methodType(EnumSet.class));
-            MethodHandle getCurrent = lookup.findVirtual(rawClass, "getCurrent", MethodType.methodType(EnumSet.class));
-            @SuppressWarnings("unchecked")
-            Class<? extends Event> eventClass = (Class<? extends Event>)rawClass;
-            bindInputEvent(eventClass, getEntity, getOld, getCurrent);
-            inputListenerRegistered = true;
-            Annihilationblade.LOGGER.info("[AnnihilationBlade] PhantomJudgement bound left-click input listener to {}", className);
-            return;
-         } catch (ClassNotFoundException ignored) {
-            // 当前环境不是该版本包路径，继续尝试下一个候选
-         } catch (ReflectiveOperationException exception) {
-            Annihilationblade.LOGGER.warn("[AnnihilationBlade] Failed to inspect {}: {}", className, exception.toString());
-         }
-      }
-      Annihilationblade.LOGGER.error("[AnnihilationBlade] Unable to locate SlashBlade InputCommandEvent; PhantomJudgement left-click trigger disabled.");
-   }
-
-   private static <T extends Event> void bindInputEvent(
-      Class<T> eventClass, MethodHandle getEntity, MethodHandle getOld, MethodHandle getCurrent
-   ) {
-      MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, eventClass, event -> {
-         try {
-            ServerPlayer player = (ServerPlayer)getEntity.invoke(event);
-            EnumSet<?> oldCommands = (EnumSet<?>)getOld.invoke(event);
-            EnumSet<?> currentCommands = (EnumSet<?>)getCurrent.invoke(event);
-            handleInputCommand(player, oldCommands, currentCommands);
-         } catch (Throwable throwable) {
-            Annihilationblade.LOGGER.error("[AnnihilationBlade] Error handling PhantomJudgement left-click input event", throwable);
-         }
-      });
+      AnnihilationInputRouter.registerInputListener();
    }
 
    public static void clearPlayer(Level level, UUID playerId) {
@@ -131,44 +71,55 @@ public class PhantomJudgement extends SpecialEffect {
       LAST_TRIGGER.remove(playerId);
    }
 
-   private static void handleInputCommand(ServerPlayer player, EnumSet<?> oldCommands, EnumSet<?> currentCommands) {
-      if (player == null || oldCommands == null || currentCommands == null || player.isSpectator() || !player.isAlive()) {
-         return;
+   /** 判断指定实体当前是否正处于幻影审判星牢锁定中（供因果坍缩微扰定身避让，避免覆盖星牢悬停）。 */
+   public static boolean isEntityLocked(UUID entityUuid) {
+      if (entityUuid == null || ACTIVE.isEmpty()) {
+         return false;
       }
-      // 仅在左键按下沿触发，与右键挥刀（DoSlashEvent）彻底分流
-      if (oldCommands.contains(InputCommand.L_DOWN) || !currentCommands.contains(InputCommand.L_DOWN)) {
-         return;
+      for (List<Sequence> sequences : ACTIVE.values()) {
+         for (Sequence sequence : sequences) {
+            for (TargetLock lock : sequence.targets) {
+               if (lock.targetId.equals(entityUuid)) {
+                  return true;
+               }
+            }
+         }
       }
-      if (Dankong.isActive(player)) {
-         return;
+      return false;
+   }
+
+   /** 由 {@link AnnihilationInputRouter} 在确认纯左键（未凑成左+右虚无权域双键）时调用。 */
+   public static boolean tryTriggerFromInput(ServerPlayer player) {
+      if (player == null || player.isSpectator() || !player.isAlive() || Dankong.isActive(player)) {
+         return false;
       }
       ItemStack blade = player.getMainHandItem();
       if (blade.isEmpty()) {
-         return;
+         return false;
       }
       ISlashBladeState state = blade.getCapability(ItemSlashBlade.BLADESTATE).orElse(null);
       if (state == null || state.isBroken() || state.isSealed() || !state.hasSpecialEffect(ModSpecialEffects.PHANTOM_JUDGEMENT.getId())) {
-         return;
+         return false;
       }
       ModConfig.PhantomJudgement config = ModConfig.COMMON.annihilationBlade.phantomJudgement;
       if (!config.enabled.getValue()) {
-         return;
+         return false;
       }
       List<Sequence> activeList = ACTIVE.get(player.getUUID());
       if (activeList != null && activeList.size() >= MAX_ACTIVE_SEQUENCES) {
-         return;
+         return false;
       }
       long gameTime = player.level().getGameTime();
       int cooldown = config.cooldownTicks.getValue();
       long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -cooldown * 2L - 10L);
       if (gameTime - last < cooldown) {
-         return;
+         return false;
       }
 
       ServerLevel level = player.serverLevel();
       List<TargetLock> locks = collectTargets(level, player, config, activeList);
       if (locks.isEmpty()) {
-         return;
+         return false;
       }
 
       LAST_TRIGGER.put(player.getUUID(), gameTime);
@@ -182,6 +133,7 @@ public class PhantomJudgement extends SpecialEffect {
       // 服务端仅播放低沉凝练的启阵解离基音，其余全部裂变/结阵/收弦/晶爆/归刃音效由客户端逐拍卡点
       level.playSound(null, center.x, center.y, center.z, SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.PLAYERS, 1.35F, 1.45F);
       level.playSound(null, center.x, center.y, center.z, SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS, 0.95F, 0.72F);
+      return true;
    }
 
    @SubscribeEvent
