@@ -84,29 +84,79 @@ public final class AnnihilationFxEvents {
       ));
    }
 
+   /** 裂界神威阶段（intParam 低 4 位）：独立模式开启首个单链节点（活体定身扭曲）。 */
+   public static final int RIFT_SINGLE_START = 0;
+   /** 裂界神威阶段（intParam 低 4 位）：独立模式当前节点临界拧断处决。 */
+   public static final int RIFT_SINGLE_SNAP = 1;
+   /** 裂界神威阶段（intParam 低 4 位）：独立模式跃迁至下一个最近目标并开始扭曲。 */
+   public static final int RIFT_SINGLE_HOP = 2;
+   /** 裂界神威阶段（intParam 低 4 位）：断空联动预抓拍（在断空处决目标前让客户端静默捕获活体模型）。 */
+   public static final int RIFT_LINK_PREPARE = 3;
+   /** 裂界神威阶段（intParam 低 4 位）：断空收刀齐斩完毕，同步引爆所有已斩杀目标残骸的神威扭杀。 */
+   public static final int RIFT_LINK_UNLEASH = 4;
+
+   /** 打包裂界 intParam：bits 0..3 = 阶段种类 | bits 4..9 = 跳序号 | bits 10..15 = 最大链长。 */
+   public static int packWorldRift(int kind, int hopIndex, int maxChain) {
+      return (kind & 0xF) | ((Math.max(0, Math.min(63, hopIndex)) & 0x3F) << 4) | ((Math.max(1, Math.min(63, maxChain)) & 0x3F) << 10);
+   }
+
+   public static int worldRiftKind(int packed) {
+      return packed & 0xF;
+   }
+
+   public static int worldRiftHop(int packed) {
+      return (packed >> 4) & 0x3F;
+   }
+
+   public static int worldRiftMaxChain(int packed) {
+      return Math.max(1, (packed >> 10) & 0x3F);
+   }
+
    /**
-    * 裂界：伤口在 center 撕开并把 targets 拖入，必须在处决这些目标之前调用。
-    *
-    * @param depth    当前连锁层数（从 1 开始）
-    * @param maxDepth 最大连锁层数（客户端据此决定是否画出向下一层蔓延的伤痕）
+    * 开启裂界·神威持续特效（独立单链开眼或断空联动预抓拍）。
     */
-   public static void worldRift(ServerLevel level, Player attacker, Vec3 center, double radius, double visualScale, int depth, int maxDepth, List<LivingEntity> targets) {
-      int count = Math.min(targets.size(), FxEventPacket.MAX_ENTITIES);
-      int[] ids = new int[count];
-      for (int i = 0; i < count; i++) {
-         ids[i] = targets.get(i).getId();
-      }
-      FxEvents.send(level, new FxEventPacket(
+   public static int worldRiftStart(
+      ServerLevel level, Player attacker, Vec3 origin, Vec3 direction, double radius, double visualScale,
+      int kind, int hopIndex, int maxChain, long seed, int[] entityIds, int[] targetTicks, int duration
+   ) {
+      return FxSustained.start(level, new FxEventPacket(
          FxTypes.WORLD_RIFT,
-         center,
-         Vec3.ZERO,
-         (float)(radius * visualScale),
+         origin,
+         direction,
+         (float)radius,
          (float)visualScale,
-         (depth & 0xF) | ((maxDepth & 0xF) << 4),
-         level.getRandom().nextLong(),
+         packWorldRift(kind, hopIndex, maxChain),
+         seed,
          attacker.getId(),
-         ids
+         entityIds,
+         targetTicks
+      ), duration);
+   }
+
+   /**
+    * 更新裂界·神威持续特效（拧断拍、单链跃迁、断空预抓拍追加或断空残骸爆发）。
+    */
+   public static void worldRiftUpdate(
+      int handle, ServerLevel level, Player attacker, Vec3 origin, Vec3 direction, double radius, double visualScale,
+      int kind, int hopIndex, int maxChain, long seed, int[] entityIds, int[] targetTicks
+   ) {
+      FxSustained.update(handle, new FxEventPacket(
+         FxTypes.WORLD_RIFT,
+         origin,
+         direction,
+         (float)radius,
+         (float)visualScale,
+         packWorldRift(kind, hopIndex, maxChain),
+         seed,
+         attacker.getId(),
+         entityIds,
+         targetTicks
       ));
+   }
+
+   /** 结束裂界·神威持续特效句柄；客户端会继续演完当前已开启奇点的缝合尾声，未引爆的预抓拍则静默销毁。 */
+   public static void worldRiftEnd(int handle) {
+      FxSustained.stop(handle);
    }
 
    /** 因果坍缩：从 start 出发按顺序串起 chain，必须在处决链上目标之前调用。 */

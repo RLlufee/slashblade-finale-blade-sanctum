@@ -1,6 +1,7 @@
 package QWQ.QingYi.annihilationblade.event;
 
 import QWQ.QingYi.annihilationblade.annihilation_blade.AnnihilationBladeDefinitions;
+import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.WorldRiftChain;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.CausalityCollapse;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.Dankong;
@@ -11,6 +12,10 @@ import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.VoidDominio
 import QWQ.QingYi.annihilationblade.blood_prison.logic.BloodPrisonLogic;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
+import QWQ.QingYi.annihilationblade.registry.ModSpecialEffects;
+import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
+import mods.flammpfeil.slashblade.item.ItemSlashBlade;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -176,7 +181,7 @@ public class ModEventHandler {
 
    @SubscribeEvent(priority = EventPriority.LOWEST)
    public static void onHurt(LivingHurtEvent event) {
-      if (WorldRiftChain.isExecutingChain()) {
+      if (TerminusLogic.isExecuting() || WorldRiftChain.isExecutingChain()) {
          return;
       }
 
@@ -186,12 +191,21 @@ public class ModEventHandler {
 
       Entity source = event.getSource().getEntity();
       Entity directSource = event.getSource().getDirectEntity();
-      if (source instanceof Player player) {
-         boolean shouldKill = isDirectGodBladeAttack(event.getSource(), player) || isGodBladeSlashEntityAttack(directSource, player);
-
-         if (shouldKill && SlashBladeTargeting.canAttack(player, event.getEntity())) {
-            if (event.getEntity().level() instanceof ServerLevel level) {
-               WorldRiftChain.scheduleFromDamage(level, player, event.getEntity());
+      if (source instanceof ServerPlayer player) {
+         boolean isDirect = isDirectGodBladeAttack(event.getSource(), player);
+         boolean isSlashEntity = isGodBladeSlashEntityAttack(directSource, player);
+         if ((isDirect || isSlashEntity) && SlashBladeTargeting.canAttack(player, event.getEntity())) {
+            ItemStack blade = isDirect || isGodBlade(player.getMainHandItem()) ? player.getMainHandItem() : player.getOffhandItem();
+            ISlashBladeState state = blade.getCapability(ItemSlashBlade.BLADESTATE).orElse(null);
+            // 仅在刀上挂载 WORLD_RIFT 且断空处于关闭状态（非激活、且配置/Shift/Ctrl 关闭或无断空）时走独立单链裂界
+            if (state != null
+                  && !state.isBroken()
+                  && !state.isSealed()
+                  && state.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId())
+                  && !Dankong.isActive(player)
+                  && Dankong.isDisabledFor(player, state)
+                  && event.getEntity().level() instanceof ServerLevel level) {
+               WorldRiftChain.tryTriggerFromHit(level, player, event);
             }
          }
       }
@@ -284,6 +298,7 @@ public class ModEventHandler {
       HAS_BLADE_CACHE.remove(id);
       LAST_BLADE_SCAN_TICK.remove(id);
       Dankong.clearPlayer(id);
+      WorldRiftChain.clearPlayer(id);
       TerminusEcho.clearPlayer(id);
       PhantomJudgement.clearPlayer(player.level(), id);
       CausalityCollapse.clearPlayer(id);

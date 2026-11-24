@@ -33,8 +33,11 @@ public final class FxTypes {
     */
    public static final int DANKONG = 12;
    /**
-    * 湮灭之刃 SE「裂界·因果伤痕」（一次性，连锁时每层一个包）。origin = 伤口中心，radius = 牵引半径 × 视觉倍率，
-    * scale = 视觉倍率，intParam = 当前层数 | 最大层数 << 4，entityIds = 被拖入伤口的目标。
+    * 湮灭之刃 SE「裂界·因果伤痕（神威空间扭曲处决）」（持续特效，双模式同步）。
+    * intParam 位打包见 {@code AnnihilationFxEvents.packWorldRift}：低 4 位为阶段种类
+    * （0 独立单链开眼 / 1 单链拧断处决 / 2 单链跃迁下一目标 / 3 断空联动预抓拍 / 4 断空联动残骸齐爆），
+    * 中位为当前链跳序号，高位为最大链长；origin = 奇点中心/施法参考点，direction = 跃迁来源或劈砍方向，
+    * radius = 空间扭曲与索敌半径，scale = 视觉倍率，entityIds / targetTicks 携带关联实体与错峰 tick。
     */
    public static final int WORLD_RIFT = 13;
    /**

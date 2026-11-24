@@ -180,7 +180,7 @@ public final class ModConfig {
 
       private SpatialFracture() {
          super("annihilation_blade.spatial_fracture", "config.annihilationblade.annihilation_blade.spatial_fracture.title");
-         this.maxDistance = doubleValue("max_distance", 160.0, 32.0, 256.0, "最大施法距离，建议 64-192。        还有，我他妈也忘记了这哪个SE对应啥技能效果了，我记忆力不好我是废物qwq", "Maximum cast distance. Suggested: 64-192.");
+         this.maxDistance = doubleValue("max_distance", 160.0, 32.0, 256.0, "最大施法距离，建议 64-192。", "Maximum cast distance. Suggested: 64-192.");
          this.fractureRadius = doubleValue("fracture_radius", 20.0, 4.0, 64.0, "空间破碎主判定半径，建议 12-32。", "Main Spatial Fracture target radius. Suggested: 12-32.");
          this.rayStep = doubleValue("ray_step", 4.0, 1.0, 12.0, "沿视线补充扫描步长，越小越密，建议 2-6。", "Backup ray scan step; lower means denser scan. Suggested: 2-6.");
          this.raySampleRadius = doubleValue("ray_sample_radius", 5.0, 1.0, 16.0, "沿视线每个采样点的扫描半径，建议 3-8。", "Backup ray sample radius. Suggested: 3-8.");
@@ -215,19 +215,23 @@ public final class ModConfig {
 
    public static final class WorldRift extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
       public final BooleanEntry enabled;
+      public final BooleanEntry dankongLinkage;
       public final DoubleEntry radius;
       public final IntegerEntry maxTargets;
       public final IntegerEntry chainCount;
       public final DoubleEntry chainRange;
+      public final IntegerEntry cooldownTicks;
       public final DoubleEntry visualScale;
 
       private WorldRift() {
          super("annihilation_blade.world_rift", "config.annihilationblade.annihilation_blade.world_rift.title");
          this.enabled = seEnabled("world_rift");
-         this.radius = doubleValue("radius", 8.0, 2.0, 32.0, "裂界扩散半径，建议 5-14。", "World Rift spread radius. Suggested: 5-14.");
-         this.maxTargets = intValue("max_targets", 24, 1, 96, "裂界最多影响目标数，建议 12-36。", "Maximum World Rift targets. Suggested: 12-36.");
-         this.chainCount = intValue("chain_count", 3, 1, 10, "裂界处决最多连锁次数，建议 3-5。", "Maximum World Rift execution chain depth. Suggested: 3-5.");
-         this.chainRange = doubleValue("chain_range", 256.0, 1.0, 1024.0, "裂界连锁距离上限，以最初攻击者为中心，建议 128-256。", "World Rift chain range cap from the original attacker. Suggested: 128-256.");
+         this.dankongLinkage = boolValue("dankong_linkage", true, "config.annihilationblade.dankong_linkage.tooltip");
+         this.radius = doubleValue("radius", 8.0, 2.0, 32.0, "裂界单链索敌与空间扭曲半径，建议 6-14。", "World Rift chain search and warp radius. Suggested: 6-14.");
+         this.maxTargets = intValue("max_targets", 24, 1, 96, "断空联动尸骸神威扭杀最大目标数，建议 12-36。", "Maximum targets for Dankong-linked Kamui corpse twist. Suggested: 12-36.");
+         this.chainCount = intValue("chain_count", 3, 1, 10, "断空关闭时裂界单链最多跳跃次数，建议 3-5。", "Maximum standalone single-chain hop count while Dankong is disabled. Suggested: 3-5.");
+         this.chainRange = doubleValue("chain_range", 256.0, 1.0, 1024.0, "裂界单链跳跃距最初攻击者的距离上限，建议 128-256。", "World Rift chain range cap from the original attacker. Suggested: 128-256.");
+         this.cooldownTicks = intValue("cooldown_ticks", 20, 0, 200, "断空关闭时独立裂界触发冷却，默认 20 tick。", "Standalone World Rift trigger cooldown when Dankong is disabled. Default: 20 ticks.");
          this.visualScale = visualScale(1.0);
       }
    }

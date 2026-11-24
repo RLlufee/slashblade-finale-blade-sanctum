@@ -1,6 +1,7 @@
 package QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect;
 
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
+import QWQ.QingYi.annihilationblade.annihilation_blade.logic.WorldRiftChain;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
@@ -47,6 +48,18 @@ public class Dankong extends SpecialEffect {
       return BLINK_ENABLED.getOrDefault(player.getUUID(), true);
    }
 
+   /**
+    * 判断玩家当前是否处于「断空关闭状态」：
+    * 配置禁用、按住 Shift 临时抑制、Left Ctrl 临时切关闪现、或刀上未挂载断空 SE 均视为关闭。
+    */
+   public static boolean isDisabledFor(Player player, ISlashBladeState state) {
+      return !ModConfig.COMMON.annihilationBlade.dankong.enabled.getValue()
+         || player.isShiftKeyDown()
+         || !isBlinkEnabled(player)
+         || state == null
+         || !state.hasSpecialEffect(ModSpecialEffects.DANKONG.getId());
+   }
+
    public static void setBlinkEnabled(Player player, boolean enabled) {
       BLINK_ENABLED.put(player.getUUID(), enabled);
       if (!enabled && player instanceof ServerPlayer serverPlayer) {
@@ -79,7 +92,10 @@ public class Dankong extends SpecialEffect {
                         Vec3 origin = player.position();
                         List<UUID> targets = collectTargets(player, origin);
                         if (!targets.isEmpty()) {
-                           Dankong.Sequence sequence = new Dankong.Sequence(origin, player.getYRot(), player.getXRot(), targets);
+                           boolean linkWorldRift = state.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId())
+                              && ModConfig.COMMON.annihilationBlade.worldRift.enabled.getValue()
+                              && ModConfig.COMMON.annihilationBlade.worldRift.dankongLinkage.getValue();
+                           Dankong.Sequence sequence = new Dankong.Sequence(origin, player.getYRot(), player.getXRot(), targets, linkWorldRift);
                            ACTIVE.put(player.getUUID(), sequence);
                            int stepInterval = ModConfig.COMMON.annihilationBlade.dankong.stepInterval.getValue();
                            sequence.fxHandle = AnnihilationFxEvents.dankongOpen(
@@ -136,6 +152,9 @@ public class Dankong extends SpecialEffect {
       Dankong.Sequence sequence = ACTIVE.remove(playerId);
       if (sequence != null) {
          AnnihilationFxEvents.dankongFinish(sequence.fxHandle);
+         if (sequence.riftLinkage) {
+            WorldRiftChain.cancelDankongLinkage(playerId);
+         }
       }
    }
 
@@ -146,6 +165,13 @@ public class Dankong extends SpecialEffect {
       level.playSound(null, sequence.origin.x, sequence.origin.y, sequence.origin.z, SoundEvents.END_PORTAL_FRAME_FILL, SoundSource.PLAYERS, 1.4F, 0.6F);
       AnnihilationFxEvents.dankongFinish(sequence.fxHandle);
       ACTIVE.remove(player.getUUID());
+      if (sequence.riftLinkage) {
+         if (sequence.strikes > 0) {
+            WorldRiftChain.scheduleDankongLinkage(player, sequence.origin);
+         } else {
+            WorldRiftChain.cancelDankongLinkage(player.getUUID());
+         }
+      }
    }
 
    /** 锁定目标的实体 ID（仅用于客户端视觉：死兆星）。 */
@@ -218,9 +244,16 @@ public class Dankong extends SpecialEffect {
          sequence.fxHandle, level, player, travelStart, chestOf(player, attackPos), target, sequence.strikes++,
          ModConfig.COMMON.annihilationBlade.dankong.visualScale.getValue()
       );
+      if (sequence.riftLinkage) {
+         WorldRiftChain.recordDankongStrike(player, level, target, sequence.origin, targetCenter.subtract(attackPos));
+      }
       level.playSound(null, target.getX(), target.getY(), target.getZ(), SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 1.0F, 1.9F);
       AttackManager.doSlash(player, player.getRandom().nextInt(360), Vec3.ZERO, true, true, 9999.0);
-      TerminusLogic.execute(target, player);
+      if (sequence.riftLinkage) {
+         TerminusLogic.executeSilent(target, player);
+      } else {
+         TerminusLogic.execute(target, player);
+      }
    }
 
    private static boolean canTarget(Player player, LivingEntity candidate) {
@@ -243,16 +276,18 @@ public class Dankong extends SpecialEffect {
       private final float yRot;
       private final float xRot;
       private final List<UUID> targets;
+      private final boolean riftLinkage;
       private int index;
       private int age;
       private int strikes;
       private int fxHandle = -1;
 
-      private Sequence(Vec3 origin, float yRot, float xRot, List<UUID> targets) {
+      private Sequence(Vec3 origin, float yRot, float xRot, List<UUID> targets, boolean riftLinkage) {
          this.origin = origin;
          this.yRot = yRot;
          this.xRot = xRot;
          this.targets = targets;
+         this.riftLinkage = riftLinkage;
       }
    }
 }
