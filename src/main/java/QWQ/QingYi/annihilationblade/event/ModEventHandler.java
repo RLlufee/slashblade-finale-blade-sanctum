@@ -223,9 +223,12 @@ public class ModEventHandler {
 
    @SubscribeEvent(priority = EventPriority.HIGHEST)
    public static void onLivingAttack(LivingAttackEvent event) {
-      if (!event.getEntity().level().isClientSide) {
-         if (event.getEntity() instanceof Player player && hasBladeInInventory(player)) {
+      if (!event.getEntity().level().isClientSide && event.getEntity() instanceof ServerPlayer player) {
+         if (hasBladeInInventory(player)) {
             event.setCanceled(true);
+            TerminusEcho.onAbsorbedAttack(player, event.getSource(), event.getAmount(), null, false);
+         } else {
+            TerminusEcho.tryInterceptExternalAttack(player, event);
          }
       }
    }

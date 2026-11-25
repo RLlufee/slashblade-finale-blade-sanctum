@@ -266,6 +266,7 @@ public class CausalityCollapse extends SpecialEffect {
                && !WorldRiftChain.isEntitySuspended(entity.getUUID())
                && !VoidDominion.isEntitySuspended(entity.getUUID())
                && !PhantomJudgement.isEntityLocked(entity.getUUID())
+               && !TerminusEcho.isEntityLocked(entity.getUUID())
          );
          for (LivingEntity target : candidates) {
             if (held.size() >= maxTargets) {

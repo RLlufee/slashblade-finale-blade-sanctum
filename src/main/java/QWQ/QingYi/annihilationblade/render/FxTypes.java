@@ -48,10 +48,12 @@ public final class FxTypes {
     */
    public static final int CAUSALITY_COLLAPSE = 14;
    /**
-    * 湮灭之刃 SE「归墟回响·终焉余律」（持续特效：START 携带第 0 波，之后每波一个 UPDATE，序列结束 STOP）。
-    * origin = 序列起点，direction = 朝向，radius = 基础射程，scale = 基础宽度，
-    * intParam = 波序号 | 总波数 << 4 | 波间隔 << 8 | 视觉倍率×10 << 12，entityIds = 本波命中的目标。
-    * 每波的实际起点、射程、宽度由 {@code TerminusEchoPattern} 推出。
+    * 湮灭之刃 SE「归墟回响·因果反噬」（受击触发：持续反噬通道 + 一次性轻量偏折）。
+    * intParam 位打包见 {@code AnnihilationFxEvents.packEcho}：低 4 位为事件种类
+    * （0 反噬启动 START / 1 处决同步 UPDATE / 2 仅偏折镜一次性波纹），bit 4 为弹射物拦截标志，bits 8..15 为视觉倍率×10。
+    * START：origin = 偏折镜中心，direction = 目标中心 − 偏折镜中心，radius = 广播包络距离，scale = 目标身形高度兜底，entityIds = [攻击者]；
+    * UPDATE：origin = 攻击者最新胸口坐标，direction = 残影斩击方向，radius = 目标宽，scale = 目标高，entityIds = [攻击者]；
+    * DEFLECT_ONLY：origin = 偏折镜中心，direction = 攻击来向单位向量。时间轴与曲线数学与服务端共用 {@code TerminusEchoPattern}。
     */
    public static final int TERMINUS_ECHO = 15;
    /**

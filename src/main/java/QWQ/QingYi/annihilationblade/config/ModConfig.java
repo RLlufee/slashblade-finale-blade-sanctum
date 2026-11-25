@@ -238,25 +238,23 @@ public final class ModConfig {
 
    public static final class TerminusEcho extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
       public final BooleanEntry enabled;
-      public final DoubleEntry range;
-      public final DoubleEntry width;
-      public final IntegerEntry echoCount;
-      public final IntegerEntry echoInterval;
+      public final BooleanEntry requireHeld;
+      public final BooleanEntry interceptProjectiles;
+      public final BooleanEntry deflectEnvironmentFx;
+      public final DoubleEntry counterRange;
       public final IntegerEntry cooldownTicks;
-      public final IntegerEntry maxActiveSequences;
-      public final IntegerEntry maxTargetsPerWave;
+      public final IntegerEntry maxActiveCounters;
       public final DoubleEntry visualScale;
 
       private TerminusEcho() {
          super("annihilation_blade.terminus_echo", "config.annihilationblade.annihilation_blade.terminus_echo.title");
          this.enabled = seEnabled("terminus_echo");
-         this.range = doubleValue("range", 36.0, 8.0, 96.0, "归墟回响基础射程，建议 24-48。", "Base Terminus Echo range. Suggested: 24-48.");
-         this.width = doubleValue("width", 4.4, 1.0, 16.0, "归墟回响基础宽度，建议 3-7。", "Base Terminus Echo width. Suggested: 3-7.");
-         this.echoCount = intValue("echo_count", 5, 1, 12, "回响波次数量，建议 3-6。", "Echo wave count. Suggested: 3-6.");
-         this.echoInterval = intValue("echo_interval_ticks", 3, 1, 12, "回响波次间隔 tick，建议 2-5。", "Ticks between echo waves. Suggested: 2-5.");
-         this.cooldownTicks = intValue("cooldown_ticks", 16, 0, 120, "触发冷却 tick，建议 12-30。", "Trigger cooldown in ticks. Suggested: 12-30.");
-         this.maxActiveSequences = intValue("max_active_sequences", 2, 1, 8, "同一玩家最多并存回响序列，建议 1-3。", "Maximum simultaneous echo sequences per player. Suggested: 1-3.");
-         this.maxTargetsPerWave = intValue("max_targets_per_wave", 32, 1, 128, "每波最多影响目标数，建议 16-48。", "Maximum targets per echo wave. Suggested: 16-48.");
+         this.requireHeld = boolValue("require_held", true, "config.annihilationblade.require_held.tooltip");
+         this.interceptProjectiles = boolValue("intercept_projectiles", true, "config.annihilationblade.intercept_projectiles.tooltip");
+         this.deflectEnvironmentFx = boolValue("deflect_environment_fx", false, "config.annihilationblade.deflect_environment_fx.tooltip");
+         this.counterRange = doubleValue("counter_range", 64.0, 8.0, 160.0, "归墟回响因果逆溯反噬的最大距离，建议 32-96。", "Maximum Terminus Echo causal reprisal range. Suggested: 32-96.");
+         this.cooldownTicks = intValue("cooldown_ticks", 10, 0, 200, "两次受击因果反噬之间的触发冷却（tick，20 tick=1秒），建议 8-30。", "Trigger cooldown between causal reprisals in ticks (20 ticks = 1s). Suggested: 8-30.");
+         this.maxActiveCounters = intValue("max_active_counters", 3, 1, 8, "同一玩家最多同时推进的因果反噬数量，建议 2-4。", "Maximum simultaneous causal reprisals per player. Suggested: 2-4.");
          this.visualScale = visualScale(1.0);
       }
    }

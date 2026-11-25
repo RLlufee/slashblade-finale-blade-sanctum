@@ -346,38 +346,103 @@ public final class AnnihilationFxEvents {
       ));
    }
 
-   /** 归墟回响：打包 intParam = 波序号 | 总波数 << 4 | 波间隔 << 8 | 视觉倍率×10 << 12。 */
-   public static int packEcho(int wave, int count, int interval, double visualScale) {
-      int scale = (int)Math.max(1, Math.min(255, Math.round(visualScale * 10.0)));
-      return (wave & 0xF) | ((count & 0xF) << 4) | ((interval & 0xF) << 8) | (scale << 12);
+   /** 归墟回响事件种类（intParam 低 4 位）：受击启动偏折镜、因果逆溯与虚影具现（持续 START）。 */
+   public static final int ECHO_START = 0;
+   /** 归墟回响事件种类（intParam 低 4 位）：抵达处决拍点，同步最新目标坐标与活体抓拍（持续 UPDATE）。 */
+   public static final int ECHO_EXECUTE = 1;
+   /** 归墟回响事件种类（intParam 低 4 位）：无合法攻击者或超距时的轻量偏折镜波纹（一次性）。 */
+   public static final int ECHO_DEFLECT_ONLY = 2;
+   /** 归墟回响标志位：本次受击拦截并吞噬了敌方弹射物。 */
+   public static final int ECHO_FLAG_PROJECTILE = 1 << 4;
+
+   /** 打包归墟回响 intParam：bits 0..3 = 种类 | bit 4 = 弹射物标志 | bits 8..15 = 视觉倍率×10（4..30）。 */
+   public static int packEcho(int kind, boolean projectileIntercepted, double visualScale) {
+      int scaleDeci = (int)Math.max(4, Math.min(30, Math.round(visualScale * 10.0)));
+      int packed = (kind & 0xF) | (scaleDeci << 8);
+      return projectileIntercepted ? (packed | ECHO_FLAG_PROJECTILE) : packed;
    }
 
-   private static FxEventPacket echoPacket(ServerLevel level, Player player, Vec3 sequenceStart, Vec3 direction, double baseRange, double baseWidth,
-                                           int wave, int count, int interval, double visualScale, List<LivingEntity> targets) {
-      int size = Math.min(targets.size(), FxEventPacket.MAX_ENTITIES);
-      int[] ids = new int[size];
-      for (int i = 0; i < size; i++) {
-         ids[i] = targets.get(i).getId();
+   public static int echoKind(int packed) {
+      return packed & 0xF;
+   }
+
+   public static boolean echoIsProjectile(int packed) {
+      return (packed & ECHO_FLAG_PROJECTILE) != 0;
+   }
+
+   public static float echoVisualScale(int packed) {
+      int scaleDeci = (packed >> 8) & 0xFF;
+      if (scaleDeci <= 0) {
+         return 1.0F;
       }
-      return new FxEventPacket(
-         FxTypes.TERMINUS_ECHO, sequenceStart, direction, (float)baseRange, (float)baseWidth,
-         packEcho(wave, count, interval, visualScale), level.getRandom().nextLong(), player.getId(), ids
-      );
+      return Math.max(0.4F, Math.min(3.0F, scaleDeci / 10.0F));
    }
 
-   /** 归墟回响开始（持续特效 START，携带第 0 波）。必须在处决第 0 波目标之前调用。 */
-   public static int echoBegin(ServerLevel level, Player player, Vec3 sequenceStart, Vec3 direction, double baseRange, double baseWidth,
-                               int count, int interval, double visualScale, List<LivingEntity> targets, int duration) {
-      return FxSustained.start(level, echoPacket(level, player, sequenceStart, direction, baseRange, baseWidth, 0, count, interval, visualScale, targets), duration);
+   /**
+    * 归墟回响·因果反噬启动（持续特效 START）。
+    * origin = 偏折镜中心，direction = 目标中心 − 偏折镜中心，radius = 广播包络，scale = 目标身形高度兜底。
+    */
+   public static int echoCounterStart(
+      ServerLevel level, Player defender, Vec3 mirrorCenter, Vec3 targetCenter,
+      double visualScale, boolean projectileIntercepted, LivingEntity target, long seed, int duration
+   ) {
+      Vec3 delta = targetCenter.subtract(mirrorCenter);
+      float broadcastRadius = (float)Math.max(12.0, delta.length() + 16.0);
+      return FxSustained.start(level, new FxEventPacket(
+         FxTypes.TERMINUS_ECHO,
+         mirrorCenter,
+         delta,
+         broadcastRadius,
+         Math.max(0.6F, target.getBbHeight()),
+         packEcho(ECHO_START, projectileIntercepted, visualScale),
+         seed,
+         defender.getId(),
+         new int[]{target.getId()}
+      ), duration);
    }
 
-   /** 归墟回响后续一波（持续特效 UPDATE）。必须在处决本波目标之前调用。 */
-   public static void echoWave(int handle, ServerLevel level, Player player, Vec3 sequenceStart, Vec3 direction, double baseRange, double baseWidth,
-                               int wave, int count, int interval, double visualScale, List<LivingEntity> targets) {
-      FxSustained.update(handle, echoPacket(level, player, sequenceStart, direction, baseRange, baseWidth, wave, count, interval, visualScale, targets));
+   /**
+    * 归墟回响·因果反斩同步（持续特效 UPDATE），必须在 {@code TerminusLogic.executeSilent} 之前调用以确保客户端抓拍活体模型。
+    * origin = 目标最新实时胸口坐标，direction = 残影斩击方向，radius = 目标宽，scale = 目标高。
+    */
+   public static void echoCounterExecute(
+      int handle, ServerLevel level, Player defender, Vec3 targetCenter, Vec3 slashDir,
+      double visualScale, boolean projectileIntercepted, LivingEntity target, long seed
+   ) {
+      FxSustained.update(handle, new FxEventPacket(
+         FxTypes.TERMINUS_ECHO,
+         targetCenter,
+         slashDir,
+         Math.max(0.6F, target.getBbWidth()),
+         Math.max(0.6F, target.getBbHeight()),
+         packEcho(ECHO_EXECUTE, projectileIntercepted, visualScale),
+         seed,
+         defender.getId(),
+         new int[]{target.getId()}
+      ));
    }
 
-   /** 归墟回响结束（持续特效 STOP）：客户端在最后一波走完后回放乐章。 */
+   /**
+    * 归墟回响·仅偏折镜波纹（一次性事件）：用于无攻击者环境伤害或超距攻击被吸收时的轻量镜盾反馈。
+    */
+   public static void echoDeflectOnly(
+      ServerLevel level, Player defender, Vec3 mirrorCenter, Vec3 incomingDir,
+      double visualScale, boolean projectileIntercepted
+   ) {
+      FxEvents.send(level, new FxEventPacket(
+         FxTypes.TERMINUS_ECHO,
+         mirrorCenter,
+         incomingDir,
+         6.0F,
+         1.8F,
+         packEcho(ECHO_DEFLECT_ONLY, projectileIntercepted, visualScale),
+         level.getRandom().nextLong(),
+         defender.getId(),
+         new int[0]
+      ));
+   }
+
+   /** 归墟回响结束（持续特效 STOP）：已触发 ECHO_EXECUTE 时客户端继续播完余韵；未处决时平滑淡出。 */
    public static void echoEnd(int handle) {
       FxSustained.stop(handle);
    }
