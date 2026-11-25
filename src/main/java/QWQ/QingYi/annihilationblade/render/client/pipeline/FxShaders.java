@@ -46,7 +46,6 @@ public final class FxShaders {
    @Nullable public static ShaderInstance woundVolume;
    @Nullable public static ShaderInstance foldScene;
    @Nullable public static ShaderInstance foldVolume;
-   @Nullable public static ShaderInstance starlessScene;
    @Nullable public static ShaderInstance eraseScene;
    @Nullable public static ShaderInstance eraseVolume;
 
@@ -76,7 +75,6 @@ public final class FxShaders {
       register(event, "fx_wound_volume", DefaultVertexFormat.POSITION, shader -> woundVolume = shader);
       register(event, "fx_fold_scene", DefaultVertexFormat.POSITION, shader -> foldScene = shader);
       register(event, "fx_fold_volume", DefaultVertexFormat.POSITION, shader -> foldVolume = shader);
-      register(event, "fx_starless_scene", DefaultVertexFormat.POSITION, shader -> starlessScene = shader);
       register(event, "fx_erase_scene", DefaultVertexFormat.POSITION, shader -> eraseScene = shader);
       register(event, "fx_erase_volume", DefaultVertexFormat.POSITION, shader -> eraseVolume = shader);
       if (failures == 0) {

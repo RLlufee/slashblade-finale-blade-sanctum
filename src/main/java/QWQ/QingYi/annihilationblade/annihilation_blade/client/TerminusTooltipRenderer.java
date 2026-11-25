@@ -60,7 +60,6 @@ public final class TerminusTooltipRenderer {
       "se.annihilationblade.terminus_echo",
       "se.annihilationblade.void_dominion",
       "se.annihilationblade.causality_collapse",
-      "se.annihilationblade.starless_judgement",
       "se.annihilationblade.phantom_judgement"
    };
    private static final String[] SPECIAL_EFFECT_IDS = new String[]{
@@ -69,7 +68,6 @@ public final class TerminusTooltipRenderer {
       "annihilationblade:terminus_echo",
       "annihilationblade:void_dominion",
       "annihilationblade:causality_collapse",
-      "annihilationblade:starless_judgement",
       "annihilationblade:phantom_judgement"
    };
    private static final int[] EFFECT_COLOR_POOL = new int[]{-640598785, -648484865, -385887379, -117459101, -395449345, -252121089};

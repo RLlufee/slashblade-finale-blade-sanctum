@@ -5,7 +5,6 @@ import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.CausalityCollap
 import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.DankongFx;
 import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.PhantomJudgementFx;
 import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.SpatialFractureFx;
-import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.StarlessJudgementFx;
 import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.TerminusEchoFx;
 import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.VoidDominionFx;
 import QWQ.QingYi.annihilationblade.annihilation_blade.client.fx.WorldRiftFx;
@@ -52,7 +51,6 @@ public final class FxClientDispatcher {
       FACTORIES.put(FxTypes.WORLD_RIFT, WorldRiftFx::new);
       FACTORIES.put(FxTypes.CAUSALITY_COLLAPSE, CausalityCollapseFx::createOrAbsorb);
       FACTORIES.put(FxTypes.TERMINUS_ECHO, TerminusEchoFx::new);
-      FACTORIES.put(FxTypes.STARLESS_JUDGEMENT, StarlessJudgementFx::new);
       FACTORIES.put(FxTypes.PHANTOM_JUDGEMENT, PhantomJudgementFx::new);
       FACTORIES.put(FxTypes.VOID_DOMINION, VoidDominionFx::new);
    }

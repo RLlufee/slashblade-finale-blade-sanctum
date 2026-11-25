@@ -3,7 +3,6 @@ package QWQ.QingYi.annihilationblade.registry;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.CausalityCollapse;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.Dankong;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.PhantomJudgement;
-import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.StarlessJudgement;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.TerminusEcho;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.VoidDominion;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.WorldRift;
@@ -32,7 +31,6 @@ public class ModSpecialEffects {
    public static final RegistryObject<SpecialEffect> TERMINUS_ECHO = SPECIAL_EFFECTS.register("terminus_echo", TerminusEcho::new);
    public static final RegistryObject<SpecialEffect> VOID_DOMINION = SPECIAL_EFFECTS.register("void_dominion", VoidDominion::new);
    public static final RegistryObject<SpecialEffect> CAUSALITY_COLLAPSE = SPECIAL_EFFECTS.register("causality_collapse", CausalityCollapse::new);
-   public static final RegistryObject<SpecialEffect> STARLESS_JUDGEMENT = SPECIAL_EFFECTS.register("starless_judgement", StarlessJudgement::new);
    public static final RegistryObject<SpecialEffect> PHANTOM_JUDGEMENT = SPECIAL_EFFECTS.register("phantom_judgement", PhantomJudgement::new);
    public static final RegistryObject<SpecialEffect> BLOOD_LEECH = SPECIAL_EFFECTS.register("blood_leech", () -> new SpecialEffect(0, false, false));
    public static final RegistryObject<SpecialEffect> SPIRIT_SHIELD = SPECIAL_EFFECTS.register("spirit_shield", () -> new SpecialEffect(0, false, false));

@@ -200,11 +200,13 @@ public final class AnnihilationInputRouter {
          return;
       }
 
-      // 若断空当前关闭且裂界单链就绪：挂起 2 tick 等待本次挥刀是否命中敌人，避免命中瞬间抢先在准星前空挥出一道多余裂痕
+      // 若断空当前关闭且裂界单链就绪：挂起 2 tick 等待本次挥刀是否命中敌人，避免贴脸命中瞬间抢先在准星前空挥出一道多余裂痕；
+      // 若已通过原版 Shift 锁定中远程目标（> 4.5 格，近战刀光不可能命中），则免等待 0 帧瞬发远程狙杀。
       if (hasCausality
             && state.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId())
             && Dankong.isDisabledFor(player, state)
-            && WorldRiftChain.isStandaloneReady(player, now)) {
+            && WorldRiftChain.isStandaloneReady(player, now)
+            && !CausalityCollapse.hasRemoteLockOnTarget(player, state)) {
          input.pendingSlashExpireTick = now + 2L;
          return;
       }
@@ -258,7 +260,7 @@ public final class AnnihilationInputRouter {
    /**
     * 确认非左右键双按后，按优先级派发普通挥刀系 SE：
     * 1) 优先尝试启动「断空」（若有合法目标且断空开启，后续收刀后将自动衔接裂界神威与因果坍缩联动）；
-    * 2) 若断空未启动且当前未处于「裂界」单链跳跃中，则派发「因果坍缩」独立空气空间折叠。
+    * 2) 若断空未启动且当前未处于「裂界」单链跳跃中，则派发「因果坍缩」独立挥刀（智能准星锁敌或自由空挥）。
     */
    private static void dispatchSlashEffects(ServerPlayer player, ISlashBladeState state) {
       if (Dankong.tryTriggerFromSlash(player, state)) {

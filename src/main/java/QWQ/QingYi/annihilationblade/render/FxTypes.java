@@ -41,10 +41,14 @@ public final class FxTypes {
     */
    public static final int WORLD_RIFT = 13;
    /**
-    * 湮灭之刃 SE「因果坍缩·错位裂痕」（一次性发包 + 客户端自动池化合并）。
-    * origin = 参考原点，direction = 施法者视线参考，radius = 裂痕局部覆盖包络，scale = 视觉倍率，
-    * intParam 打包模式与存续时长（见 {@code AnnihilationFxEvents.packCausality}），
-    * entityIds / targetTicks 按索引成对量化编码每道裂痕相对 origin 的 3D 坐标 (dx, dy, dz)、目标身形高度与错峰起裂 tick。
+    * 湮灭之刃 SE「因果坍缩·时空裂痕」（一次性发包 + 客户端自动池化合并）。
+    * intParam 打包模式与存续时长（见 {@code AnnihilationFxEvents.packCausality}）：
+    * <ul>
+    *   <li>mode 0/1/2（裂痕生成）：origin = 参考原点，direction = 施法者视线参考，radius = 裂痕局部覆盖包络，scale = 视觉倍率，
+    *       entityIds / targetTicks 按索引成对量化编码每道裂痕相对 origin 的 3D 坐标 (dx, dy, dz)、目标身形高度与错峰起裂 tick；</li>
+    *   <li>mode 3（核心吞噬绞杀）：origin = 裂痕中心，direction = 被绞杀生物实时中心，radius = 生物宽度，scale = 视觉倍率，
+    *       entityIds = [目标实体 ID]，targetTicks = [目标高度×10]。</li>
+    * </ul>
     */
    public static final int CAUSALITY_COLLAPSE = 14;
    /**
@@ -56,11 +60,7 @@ public final class FxTypes {
     * DEFLECT_ONLY：origin = 偏折镜中心，direction = 攻击来向单位向量。时间轴与曲线数学与服务端共用 {@code TerminusEchoPattern}。
     */
    public static final int TERMINUS_ECHO = 15;
-   /**
-    * 湮灭之刃 SE「星寂裁决·断天终判」（一次性）。origin = 判定带起点，direction = 朝向，radius = 射程，scale = 宽度，
-    * intParam = 视觉倍率×10，entityIds = 判定带内的目标（按投影由近到远）。
-    */
-   public static final int STARLESS_JUDGEMENT = 16;
+   // 编号 16 原为 STARLESS_JUDGEMENT（星寂裁决），已移除，按末尾追加规则留空不复用。
    // 编号 17 原为 ABYSSAL_DECREE（归墟天诏），已移除，按末尾追加规则留空不复用。
    /**
     * 湮灭之刃 SE「幻影审判·千刃星流」（持续特效：解离启阵 START，齐爆斩绝 UPDATE，随后 STOP）。

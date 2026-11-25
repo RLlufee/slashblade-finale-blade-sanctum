@@ -27,7 +27,6 @@ public final class ModConfig {
       public final TerminusEcho terminusEcho;
       public final VoidDominion voidDominion;
       public final CausalityCollapse causalityCollapse;
-      public final StarlessJudgement starlessJudgement;
       public final PhantomJudgement phantomJudgement;
       public final Domain bloodPrisonDomain;
       public final PhantomBurst bloodPrisonPhantomBurst;
@@ -45,7 +44,6 @@ public final class ModConfig {
          this.terminusEcho = this.annihilationBlade.terminusEcho;
          this.voidDominion = this.annihilationBlade.voidDominion;
          this.causalityCollapse = this.annihilationBlade.causalityCollapse;
-         this.starlessJudgement = this.annihilationBlade.starlessJudgement;
          this.phantomJudgement = this.annihilationBlade.phantomJudgement;
          this.bloodPrisonDomain = this.bloodPrison.domain;
          this.bloodPrisonPhantomBurst = this.bloodPrison.phantomBurst;
@@ -104,7 +102,6 @@ public final class ModConfig {
       public final TerminusEcho terminusEcho;
       public final VoidDominion voidDominion;
       public final CausalityCollapse causalityCollapse;
-      public final StarlessJudgement starlessJudgement;
       public final PhantomJudgement phantomJudgement;
 
       private AnnihilationBlade() {
@@ -114,7 +111,6 @@ public final class ModConfig {
          this.terminusEcho = new TerminusEcho();
          this.voidDominion = new VoidDominion();
          this.causalityCollapse = new CausalityCollapse();
-         this.starlessJudgement = new StarlessJudgement();
          this.phantomJudgement = new PhantomJudgement();
       }
    }
@@ -285,10 +281,15 @@ public final class ModConfig {
    public static final class CausalityCollapse extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
       public final BooleanEntry enabled;
       public final BooleanEntry worldRiftLinkage;
+      public final BooleanEntry linkageDevour;
+      public final BooleanEntry devourExecution;
+      public final BooleanEntry lockOnLinkage;
+      public final DoubleEntry lockOnRange;
+      public final DoubleEntry aimLockRange;
+      public final DoubleEntry aimLockAngle;
+      public final DoubleEntry suctionRadius;
+      public final IntegerEntry maxSuctionTargets;
       public final IntegerEntry scarDurationTicks;
-      public final DoubleEntry stasisRadius;
-      public final IntegerEntry stasisTicks;
-      public final IntegerEntry maxStasisTargets;
       public final IntegerEntry cooldownTicks;
       public final DoubleEntry visualScale;
 
@@ -296,42 +297,44 @@ public final class ModConfig {
          super("annihilation_blade.causality_collapse", "config.annihilationblade.annihilation_blade.causality_collapse.title");
          this.enabled = seEnabled("causality_collapse");
          this.worldRiftLinkage = boolValue("world_rift_linkage", true, "config.annihilationblade.world_rift_linkage.tooltip");
+         this.linkageDevour = boolValue("linkage_devour", true, "config.annihilationblade.linkage_devour.tooltip");
+         this.devourExecution = boolValue("devour_execution", true, "config.annihilationblade.devour_execution.tooltip");
+         this.lockOnLinkage = boolValue("lock_on_linkage", true, "config.annihilationblade.lock_on_linkage.tooltip");
+         this.lockOnRange = doubleValue(
+            "lock_on_range", 64.0, 8.0, 128.0,
+            "联动原版拔刀剑 Shift 锁敌时的最大远程狙杀距离（格，完整覆盖原版 40 格锁定并留有移动余量），建议 48-80。",
+            "Maximum remote snipe range in blocks when linked with vanilla SlashBlade Shift lock-on (covers vanilla 40-block lock-on). Suggested: 48-80."
+         );
+         this.aimLockRange = doubleValue(
+            "aim_lock_range", 0.0, 0.0, 48.0,
+            "未按 Shift 锁敌时的自由准星辅助索敌距离（格；默认 0 以便未锁定时自由砍空气玩，设为 >0 如 20 则开启免 Shift 准星自动索敌）。",
+            "Free crosshair auto-lock distance in blocks when not using Shift lock-on (default 0 for pure air-slash play; set e.g. 20 to enable)."
+         );
+         this.aimLockAngle = doubleValue(
+            "aim_lock_angle", 14.0, 3.0, 35.0,
+            "免 Shift 准星辅助索敌允许的最大偏角（度；仅在 aim_lock_range > 0 时生效），建议 10-18。",
+            "Maximum crosshair deviation angle in degrees for free auto-lock (only used when aim_lock_range > 0). Suggested: 10-18."
+         );
+         this.suctionRadius = doubleValue(
+            "suction_radius", 6.0, 0.0, 16.0,
+            "单道时空裂痕持续引力漩涡的吸扯半径（格；设为 0 则关闭引力吸扯与绞杀，纯观赏），建议 4.5-8。",
+            "Continuous gravitational vortex pull radius of each spacetime rift scar in blocks (0 for pure visual). Suggested: 4.5-8."
+         );
+         this.maxSuctionTargets = intValue(
+            "max_suction_targets", 24, 1, 96,
+            "单道裂痕同时牵引与绞杀的最大敌对生物数量，建议 12-32。",
+            "Maximum hostile targets pulled and crushed simultaneously by a single rift scar. Suggested: 12-32."
+         );
          this.scarDurationTicks = intValue(
             "scar_duration_ticks", 64, 20, 200,
             "单道因果时空裂痕存续总时长（tick，20 tick = 1 秒，默认 64 tick ≈ 3.2 秒）。",
             "Lifetime in ticks of each causal spacetime rift scar (20 ticks = 1s; default 64 ticks ≈ 3.2s)."
          );
-         this.stasisRadius = doubleValue(
-            "stasis_radius", 4.5, 1.5, 16.0,
-            "单道因果裂痕初裂瞬间施加零伤害微扰定身的局部半径，建议 3-6。",
-            "Local radius around each causal rift scar for the zero-damage micro-stasis. Suggested: 3-6."
+         this.cooldownTicks = intValue(
+            "cooldown_ticks", 16, 0, 120,
+            "独立挥刀触发单道因果裂痕的冷却 tick，建议 12-30（神威联动不受此冷却限制）。",
+            "Standalone slash causal rift cooldown in ticks. Suggested: 12-30 (World Rift linkage ignores this cooldown)."
          );
-         this.stasisTicks = intValue(
-            "stasis_ticks", 6, 0, 20,
-            "裂痕初裂瞬间对局部范围内敌对生物施加的零伤害微扰定身时长（tick，6 tick = 0.3 秒；设为 0 则纯观赏无定身）。",
-            "Duration in ticks of the zero-damage micro-stasis applied on rift crack (6 ticks = 0.3s; 0 for pure visual)."
-         );
-         this.maxStasisTargets = intValue("max_stasis_targets", 32, 1, 96, "单次裂痕最多施加微扰定身的敌对生物数，建议 16-48。", "Maximum hostile targets affected by rift micro-stasis. Suggested: 16-48.");
-         this.cooldownTicks = intValue("cooldown_ticks", 16, 0, 120, "独立空挥触发单道因果裂痕的冷却 tick，建议 12-30（神威联动不受此冷却限制）。", "Standalone air-slash causal rift cooldown in ticks. Suggested: 12-30 (World Rift linkage ignores this cooldown).");
-         this.visualScale = visualScale(1.0);
-      }
-   }
-
-   public static final class StarlessJudgement extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
-      public final BooleanEntry enabled;
-      public final DoubleEntry range;
-      public final DoubleEntry width;
-      public final IntegerEntry cooldownTicks;
-      public final IntegerEntry maxTargets;
-      public final DoubleEntry visualScale;
-
-      private StarlessJudgement() {
-         super("annihilation_blade.starless_judgement", "config.annihilationblade.annihilation_blade.starless_judgement.title");
-         this.enabled = seEnabled("starless_judgement");
-         this.range = doubleValue("range", 56.0, 8.0, 128.0, "星寂裁决射程，建议 36-72。", "Starless Judgement beam range. Suggested: 36-72.");
-         this.width = doubleValue("width", 8.5, 1.0, 24.0, "星寂裁决宽度，建议 5-12。", "Starless Judgement beam width. Suggested: 5-12.");
-         this.cooldownTicks = intValue("cooldown_ticks", 34, 0, 160, "触发冷却 tick，建议 24-60。", "Trigger cooldown in ticks. Suggested: 24-60.");
-         this.maxTargets = intValue("max_targets", 80, 1, 200, "星寂裁决最多影响目标数，建议 40-120。", "Maximum Starless Judgement targets. Suggested: 40-120.");
          this.visualScale = visualScale(1.0);
       }
    }

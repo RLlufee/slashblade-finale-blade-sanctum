@@ -31,7 +31,6 @@ public final class AnnihilationBladeDefinitions {
       "annihilationblade:terminus_echo",
       "annihilationblade:void_dominion",
       "annihilationblade:causality_collapse",
-      "annihilationblade:starless_judgement",
       "annihilationblade:phantom_judgement"
    };
 

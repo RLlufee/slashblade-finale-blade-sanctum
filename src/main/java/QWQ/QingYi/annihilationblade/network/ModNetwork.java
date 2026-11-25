@@ -23,10 +23,12 @@ public final class ModNetwork {
     * 10：虚无权域改为持续阶段同步，并为关联目标附带处决 tick；
     * 11：裂界重制为万花筒神威双模式持续同步协议（独立单链跳跃 + 断空联动残骸扭杀）；
     * 12：因果坍缩重制为多点局部 UV 错位因果裂痕协议（量化逐目标 3D 坐标 + 客户端池化合并，支持神威双模式联动与独立空挥）；
-    * 13：归墟回响重制为受击因果反噬协议（偏折镜、因果溯源、玩家虚影同步处决与轻量环境偏折）。
+    * 13：归墟回响重制为受击因果反噬协议（偏折镜、因果溯源、玩家虚影同步处决与轻量环境偏折）；
+    * 14：移除已废弃的 STARLESS_JUDGEMENT（16）特效事件与 fx_starless_scene 着色器；
+    * 15：因果坍缩槽位 14 新增 mode=3（CAUSALITY_MODE_DEVOUR）裂隙核心吞噬绞杀同步包（支持客户端 3D 躯壳潮汐撕裂吸入演出）。
     * 新旧版本客户端/服务端互相拒绝连接，避免解析错乱或特效缺失。
     */
-   private static final String PROTOCOL_VERSION = "13";
+   private static final String PROTOCOL_VERSION = "15";
    private static int messageId;
    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
       ResourceLocation.fromNamespaceAndPath("annihilationblade", "main"), () -> PROTOCOL_VERSION, PROTOCOL_VERSION::equals, PROTOCOL_VERSION::equals

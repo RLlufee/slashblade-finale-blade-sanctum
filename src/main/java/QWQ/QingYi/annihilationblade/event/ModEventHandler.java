@@ -7,7 +7,6 @@ import QWQ.QingYi.annihilationblade.annihilation_blade.logic.WorldRiftChain;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.CausalityCollapse;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.Dankong;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.PhantomJudgement;
-import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.StarlessJudgement;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.TerminusEcho;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.VoidDominion;
 import QWQ.QingYi.annihilationblade.blood_prison.logic.BloodPrisonLogic;
@@ -307,7 +306,6 @@ public class ModEventHandler {
       TerminusEcho.clearPlayer(id);
       PhantomJudgement.clearPlayer(player.level(), id);
       CausalityCollapse.clearPlayer(id);
-      StarlessJudgement.clearPlayer(id);
       VoidDominion.clearPlayer(id);
    }
 }

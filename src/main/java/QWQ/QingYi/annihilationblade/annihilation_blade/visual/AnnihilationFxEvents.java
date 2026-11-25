@@ -187,12 +187,14 @@ public final class AnnihilationFxEvents {
       FxSustained.stop(handle);
    }
 
-   /** 因果坍缩模式：独立空挥单道因果裂痕。 */
+   /** 因果坍缩模式：独立挥刀单道因果裂痕（含智能准星索敌与空挥）。 */
    public static final int CAUSALITY_MODE_STANDALONE = 0;
    /** 因果坍缩模式：断空 + 神威群体联动全战场裂痕群。 */
    public static final int CAUSALITY_MODE_LINKED_GROUP = 1;
    /** 因果坍缩模式：神威独立单链逐目标原位裂痕。 */
    public static final int CAUSALITY_MODE_LINKED_SINGLE = 2;
+   /** 因果坍缩模式：裂痕核心吞噬并空间绞杀目标瞬间同步事件（必须在 executeSilent 之前发送）。 */
+   public static final int CAUSALITY_MODE_DEVOUR = 3;
 
    /** 打包因果坍缩 intParam：bits 0..1 = 模式 | bits 4..11 = 单道裂痕存续 tick（20..200）。 */
    public static int packCausality(int mode, int scarDurationTicks) {
@@ -228,6 +230,30 @@ public final class AnnihilationFxEvents {
          attacker.getId(),
          packedXZ,
          packedYMeta
+      ));
+   }
+
+   /**
+    * 下发单次裂痕核心空间绞杀吞噬事件（必须在 {@code TerminusLogic.executeSilent} 之前发送，以便客户端抓拍活体 3D 模型）。
+    * origin = 裂痕中心，direction = 被绞杀生物实时中心，radius = 生物碰撞箱宽度，scale = 视觉倍率，
+    * entityIds = [目标实体 ID]，targetTicks = [目标高度 × 10]。
+    */
+   public static void causalityCollapseDevour(
+      ServerLevel level, Player attacker, Vec3 scarCenter, LivingEntity target, double visualScale
+   ) {
+      Vec3 targetCenter = target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+      int heightDeci = Math.max(6, Math.min(120, Math.round(target.getBbHeight() * 10.0F)));
+      FxEvents.send(level, new FxEventPacket(
+         FxTypes.CAUSALITY_COLLAPSE,
+         scarCenter,
+         targetCenter,
+         Math.max(0.5F, target.getBbWidth()),
+         (float)visualScale,
+         packCausality(CAUSALITY_MODE_DEVOUR, 20),
+         level.getRandom().nextLong(),
+         attacker.getId(),
+         new int[]{target.getId()},
+         new int[]{heightDeci}
       ));
    }
 
@@ -331,19 +357,6 @@ public final class AnnihilationFxEvents {
    /** 幻影审判结束（持续特效 STOP）：已齐爆时客户端继续播放斩绝余韵与百刃归鞘直至结束；未齐爆则提前平滑消散。 */
    public static void phantomEnd(int handle) {
       FxSustained.stop(handle);
-   }
-
-   /** 星寂裁决：沿 direction 劈开天幕并审判 targets（按投影由近到远），必须在处决之前调用。 */
-   public static void starlessJudgement(ServerLevel level, Player player, Vec3 start, Vec3 direction, double range, double width, double visualScale, List<LivingEntity> targets) {
-      int size = Math.min(targets.size(), FxEventPacket.MAX_ENTITIES);
-      int[] ids = new int[size];
-      for (int i = 0; i < size; i++) {
-         ids[i] = targets.get(i).getId();
-      }
-      int scale = (int)Math.max(1, Math.min(255, Math.round(visualScale * 10.0)));
-      FxEvents.send(level, new FxEventPacket(
-         FxTypes.STARLESS_JUDGEMENT, start, direction, (float)range, (float)width, scale, level.getRandom().nextLong(), player.getId(), ids
-      ));
    }
 
    /** 归墟回响事件种类（intParam 低 4 位）：受击启动偏折镜、因果逆溯与虚影具现（持续 START）。 */
