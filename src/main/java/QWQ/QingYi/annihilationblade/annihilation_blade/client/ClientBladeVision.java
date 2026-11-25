@@ -12,6 +12,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingOut;
 import net.minecraftforge.event.TickEvent.ClientTickEvent;
 import net.minecraftforge.event.TickEvent.Phase;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -28,6 +29,7 @@ public final class ClientBladeVision {
    private static boolean gammaBoostActive;
    private static double savedGamma = -1.0D;
    private static Field gammaValueField;
+   private static boolean gammaFieldLookupFailed;
    private static boolean gammaFieldWarningLogged;
 
    private ClientBladeVision() {
@@ -42,7 +44,9 @@ public final class ClientBladeVision {
 
       if (!AnnihilationBladeItemSupport.isHoldingAnnihilationBlade(player)) {
          UUID playerId = player.getUUID();
-         if (playerId.equals(lastPlayerId) && player.tickCount - lastScanTick < INVENTORY_SCAN_INTERVAL) {
+         if (playerId.equals(lastPlayerId)
+               && player.tickCount >= lastScanTick
+               && player.tickCount - lastScanTick < INVENTORY_SCAN_INTERVAL) {
             return cachedHasBlade;
          }
 
@@ -62,33 +66,44 @@ public final class ClientBladeVision {
    }
 
    @SubscribeEvent
+   public static void onLoggingOut(LoggingOut event) {
+      clearCache();
+   }
+
+   @SubscribeEvent
    public static void onClientTick(ClientTickEvent event) {
       if (event.phase != Phase.END) {
          return;
       }
 
       Minecraft minecraft = Minecraft.getInstance();
-      boolean shouldBoost = minecraft.player != null
-         && (hasBladeInInventory() || InfinityStellarisItemSupport.hasInfinityStellarisInInventory(minecraft.player));
+      if (minecraft.player == null) {
+         clearCache();
+         applyGammaBoost(minecraft, false);
+         return;
+      }
+      boolean shouldBoost = hasBladeInInventory()
+         || InfinityStellarisItemSupport.hasInfinityStellarisInInventory(minecraft.player);
       applyGammaBoost(minecraft, shouldBoost);
    }
 
    private static void applyGammaBoost(Minecraft minecraft, boolean shouldBoost) {
       OptionInstance<Double> gamma = minecraft.options.gamma();
       double currentGamma = gamma.get();
+      double targetGamma = gammaFieldLookupFailed ? 1.0D : FULL_BRIGHT_GAMMA;
       if (shouldBoost) {
          if (!gammaBoostActive) {
             savedGamma = currentGamma;
             gammaBoostActive = true;
-         } else if (currentGamma != FULL_BRIGHT_GAMMA && currentGamma != savedGamma) {
+         } else if (!sameGamma(currentGamma, targetGamma) && !sameGamma(currentGamma, savedGamma)) {
             savedGamma = currentGamma;
          }
 
-         if (currentGamma != FULL_BRIGHT_GAMMA) {
+         if (!sameGamma(currentGamma, targetGamma)) {
             setGammaValue(gamma, FULL_BRIGHT_GAMMA);
          }
       } else if (gammaBoostActive) {
-         if (savedGamma >= 0.0D && currentGamma == FULL_BRIGHT_GAMMA) {
+         if (savedGamma >= 0.0D && sameGamma(currentGamma, targetGamma)) {
             setGammaValue(gamma, savedGamma);
          }
 
@@ -108,6 +123,7 @@ public final class ClientBladeVision {
          valueField.set(gamma, value);
       } catch (IllegalAccessException | IllegalArgumentException exception) {
          gammaValueField = null;
+         gammaFieldLookupFailed = true;
          if (!gammaFieldWarningLogged) {
             Annihilationblade.LOGGER.warn("Failed to write gamma option value reflectively", exception);
             gammaFieldWarningLogged = true;
@@ -117,6 +133,9 @@ public final class ClientBladeVision {
    }
 
    private static Field getGammaValueField(OptionInstance<Double> gamma) {
+      if (gammaFieldLookupFailed) {
+         return null;
+      }
       if (gammaValueField != null && isGammaValueField(gammaValueField, gamma)) {
          return gammaValueField;
       }
@@ -130,6 +149,7 @@ public final class ClientBladeVision {
          }
       }
 
+      gammaFieldLookupFailed = true;
       if (!gammaFieldWarningLogged) {
          Annihilationblade.LOGGER.warn("Could not locate mutable OptionInstance value field for gamma fullbright");
          gammaFieldWarningLogged = true;

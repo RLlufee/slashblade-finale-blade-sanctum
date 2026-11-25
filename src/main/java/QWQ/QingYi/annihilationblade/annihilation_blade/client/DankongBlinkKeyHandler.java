@@ -1,7 +1,7 @@
 package QWQ.QingYi.annihilationblade.annihilation_blade.client;
 
 import QWQ.QingYi.annihilationblade.Annihilationblade;
-import QWQ.QingYi.annihilationblade.common.AnnihilationBladeItemSupport;
+import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.Dankong;
 import QWQ.QingYi.annihilationblade.network.DankongBlinkModePacket;
 import QWQ.QingYi.annihilationblade.network.ModNetwork;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -49,14 +49,31 @@ public final class DankongBlinkKeyHandler {
          return;
       }
 
+      boolean pendingState = blinkEnabled;
+      boolean clicked = false;
       while (consumeToggleClick()) {
-         if (!AnnihilationBladeItemSupport.isHoldingAnnihilationBlade(player)) {
+         if (!Dankong.isHoldingDankongBlade(player)) {
             continue;
          }
+         pendingState = !pendingState;
+         clicked = true;
+      }
+      if (clicked) {
+         // 仅向服务端提交目标状态，等待服务端 S2C 权威回执确认后再更新本地状态与提示，避免切手丢包导致双端反相
+         ModNetwork.CHANNEL.sendToServer(new DankongBlinkModePacket(pendingState));
+      }
+   }
 
-         blinkEnabled = !blinkEnabled;
-         ModNetwork.CHANNEL.sendToServer(new DankongBlinkModePacket(blinkEnabled));
-         player.displayClientMessage(Component.translatable(MESSAGE_TOGGLE, Component.translatable(blinkEnabled ? MESSAGE_STATE_ON : MESSAGE_STATE_OFF)), true);
+   public static void applyServerSync(boolean enabled, boolean showMessage) {
+      blinkEnabled = enabled;
+      if (showMessage) {
+         Player player = Minecraft.getInstance().player;
+         if (player != null) {
+            player.displayClientMessage(
+               Component.translatable(MESSAGE_TOGGLE, Component.translatable(enabled ? MESSAGE_STATE_ON : MESSAGE_STATE_OFF)),
+               true
+            );
+         }
       }
    }
 

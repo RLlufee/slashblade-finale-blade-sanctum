@@ -63,7 +63,7 @@ public final class SpatialFractureExecutor {
       int maxTargets = config.maxTargets.getValue();
       Vec3 core = center.add(0.0, 1.0, 0.0);
 
-      // 阶段一：光束命中目标（空间破碎展开，温和向心束缚 + 短暂失重悬停，防止目标跑离爆区）
+      // 阶段一：光束命中目标（空间破碎展开，温和向心束缚 + 持续阶段脉冲牵引，防止高速目标中途逃出爆区造成音画脱节）
       ServerTickScheduler.schedule(SpatialFracturePattern.BEAM_HIT_TICK, () -> {
          if (!isContextValid(level, player)) {
             return;
@@ -76,6 +76,22 @@ public final class SpatialFractureExecutor {
             target.hasImpulse = true;
          }
       });
+
+      // 中段持续束缚脉冲（每 6 tick 补一次向心牵引，覆盖 BEAM_HIT 到 COLLAPSE 之间的空档期）
+      for (int holdTick = SpatialFracturePattern.BEAM_HIT_TICK + 6; holdTick < SpatialFracturePattern.COLLAPSE_START_TICK; holdTick += 6) {
+         ServerTickScheduler.schedule(holdTick, () -> {
+            if (!isContextValid(level, player)) {
+               return;
+            }
+            Set<LivingEntity> active = resolveActiveTargets(level, player, center, radius, lockedIds, maxTargets);
+            for (LivingEntity target : active) {
+               SpecialEffectSupport.pullToward(target, core, 0.38);
+               Vec3 vel = target.getDeltaMovement();
+               target.setDeltaMovement(vel.x * 0.55, Math.max(0.06, vel.y * 0.55), vel.z * 0.55);
+               target.hasImpulse = true;
+            }
+         });
+      }
 
       // 阶段二：奇点黑洞坍缩（强力引力将目标卷向爆心等待终焉）
       ServerTickScheduler.schedule(SpatialFracturePattern.COLLAPSE_START_TICK, () -> {
@@ -90,6 +106,22 @@ public final class SpatialFractureExecutor {
             target.hasImpulse = true;
          }
       });
+
+      // 坍缩尾段持续吸聚（防止目标在 COLLAPSE 到 DETONATE 间弹飞）
+      for (int pullTick = SpatialFracturePattern.COLLAPSE_START_TICK + 5; pullTick < SpatialFracturePattern.DETONATE_TICK; pullTick += 5) {
+         ServerTickScheduler.schedule(pullTick, () -> {
+            if (!isContextValid(level, player)) {
+               return;
+            }
+            Set<LivingEntity> active = resolveActiveTargets(level, player, center, radius, lockedIds, maxTargets);
+            for (LivingEntity target : active) {
+               SpecialEffectSupport.pullToward(target, core, 0.95);
+               Vec3 vel = target.getDeltaMovement();
+               target.setDeltaMovement(vel.x * 0.65, Math.max(0.08, vel.y * 0.65), vel.z * 0.65);
+               target.hasImpulse = true;
+            }
+         });
+      }
 
       // 阶段三：终极绚烂超新星爆轰瞬间——同步终焉处决全部目标
       ServerTickScheduler.schedule(SpatialFracturePattern.DETONATE_TICK, () -> {
@@ -242,8 +274,10 @@ public final class SpatialFractureExecutor {
       }
 
       if (targets.isEmpty()) {
-         AABB fallback = player.getBoundingBox().inflate(config.backupRadius.getValue());
-         targets.addAll(level.getEntitiesOfClass(LivingEntity.class, fallback, entity -> canTarget(player, entity)));
+         targets.addAll(SpecialEffectSupport.limit(
+            SpecialEffectSupport.radialTargets(level, player, player.position(), config.backupRadius.getValue()),
+            maxTargets
+         ));
       }
 
       return targets;

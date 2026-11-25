@@ -12,19 +12,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
+import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import mods.flammpfeil.slashblade.registry.specialeffects.SpecialEffect;
-import mods.flammpfeil.slashblade.util.AttackManager;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent.Phase;
 import net.minecraftforge.event.TickEvent.PlayerTickEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
@@ -44,6 +46,22 @@ public class Dankong extends SpecialEffect {
 
    public static boolean isBlinkEnabled(Player player) {
       return BLINK_ENABLED.getOrDefault(player.getUUID(), true);
+   }
+
+   /** 判断玩家主手或副手是否持有未损坏、未封印且挂载了「断空」SE 的任意拔刀剑（支持 SE 独立移植）。 */
+   public static boolean isHoldingDankongBlade(Player player) {
+      if (player == null) {
+         return false;
+      }
+      return hasDankongEffect(player.getMainHandItem()) || hasDankongEffect(player.getOffhandItem());
+   }
+
+   private static boolean hasDankongEffect(net.minecraft.world.item.ItemStack stack) {
+      if (stack == null || stack.isEmpty()) {
+         return false;
+      }
+      ISlashBladeState state = stack.getCapability(ItemSlashBlade.BLADESTATE).orElse(null);
+      return state != null && !state.isBroken() && !state.isSealed() && state.hasSpecialEffect(ModSpecialEffects.DANKONG.getId());
    }
 
    /**
@@ -75,6 +93,16 @@ public class Dankong extends SpecialEffect {
    public static void clearPlayer(UUID playerId) {
       cancelActiveSequence(playerId);
       LAST_TRIGGER.remove(playerId);
+   }
+
+   @SubscribeEvent
+   public static void onServerStopping(ServerStoppingEvent event) {
+      for (Dankong.Sequence sequence : ACTIVE.values()) {
+         AnnihilationFxEvents.dankongFinish(sequence.fxHandle);
+      }
+      ACTIVE.clear();
+      LAST_TRIGGER.clear();
+      BLINK_ENABLED.clear();
    }
 
    /**
@@ -241,7 +269,7 @@ public class Dankong extends SpecialEffect {
          away = player.getLookAngle();
       }
 
-      Vec3 attackPos = target.position().add(away.normalize().scale(1.8)).add(0.0, 0.15, 0.0);
+      Vec3 attackPos = resolveSafeStrikePos(level, player, target, away);
       float yaw = yawToFace(attackPos, targetCenter);
       float pitch = pitchToFace(attackPos, targetCenter);
       Vec3 travelStart = chestOf(player, player.position());
@@ -256,7 +284,8 @@ public class Dankong extends SpecialEffect {
          WorldRiftChain.recordDankongStrike(player, level, target, sequence.origin, targetCenter.subtract(attackPos));
       }
       level.playSound(null, target.getX(), target.getY(), target.getZ(), SoundEvents.PLAYER_ATTACK_SWEEP, SoundSource.PLAYERS, 1.0F, 1.9F);
-      AttackManager.doSlash(player, player.getRandom().nextInt(360), Vec3.ZERO, true, true, 9999.0);
+      // 仅播挥手动画而不生成高伤范围 EntitySlashEffect，防止首闪提前劈死相邻排队目标、破坏多目标瞬闪与裂界/因果联动
+      player.swing(InteractionHand.MAIN_HAND, true);
       if (sequence.riftLinkage) {
          TerminusLogic.executeSilent(target, player);
       } else {
@@ -266,6 +295,39 @@ public class Dankong extends SpecialEffect {
 
    private static boolean canTarget(Player player, LivingEntity candidate) {
       return SpecialEffectSupport.canTarget(player, candidate);
+   }
+
+   /**
+    * 瞬移落点碰撞安全检测：依次尝试理想外侧、近距、反侧、左右侧向及目标原位，
+    * 避免在矿洞或贴墙战斗时把玩家传送进实心方块内部导致窒息或黑屏。
+    */
+   private static Vec3 resolveSafeStrikePos(ServerLevel level, ServerPlayer player, LivingEntity target, Vec3 away) {
+      Vec3 horiz = new Vec3(away.x, 0.0, away.z);
+      Vec3 dir = horiz.lengthSqr() > 1.0E-4 ? horiz.normalize() : new Vec3(player.getLookAngle().x, 0.0, player.getLookAngle().z);
+      if (dir.lengthSqr() <= 1.0E-4) {
+         dir = new Vec3(0.0, 0.0, 1.0);
+      } else {
+         dir = dir.normalize();
+      }
+      Vec3 side = new Vec3(-dir.z, 0.0, dir.x);
+      Vec3 base = target.position().add(0.0, 0.15, 0.0);
+      Vec3[] candidates = new Vec3[]{
+         base.add(dir.scale(1.8)),
+         base.add(dir.scale(1.1)),
+         base.add(dir.scale(-1.5)),
+         base.add(side.scale(1.4)),
+         base.add(side.scale(-1.4)),
+         target.position().add(0.0, 0.25, 0.0)
+      };
+      Vec3 playerPos = player.position();
+      AABB playerBox = player.getBoundingBox();
+      for (Vec3 candidate : candidates) {
+         AABB moved = playerBox.move(candidate.x - playerPos.x, candidate.y - playerPos.y, candidate.z - playerPos.z);
+         if (level.noCollision(player, moved)) {
+            return candidate;
+         }
+      }
+      return playerPos;
    }
 
    private static float yawToFace(Vec3 from, Vec3 to) {

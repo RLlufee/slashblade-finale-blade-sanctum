@@ -27,7 +27,15 @@ public final class ClientBladeLookup {
          return ItemStack.EMPTY;
       }
 
-      Registry<SlashBladeDefinition> registry = BladeModelManager.getClientSlashBladeRegistry();
+      Registry<SlashBladeDefinition> registry;
+      try {
+         registry = BladeModelManager.getClientSlashBladeRegistry();
+      } catch (RuntimeException ignored) {
+         return ItemStack.EMPTY;
+      }
+      if (registry == null) {
+         return ItemStack.EMPTY;
+      }
 
       for (Entry<ResourceKey<SlashBladeDefinition>, SlashBladeDefinition> entry : registry.entrySet()) {
          if (entry.getKey() != null) {

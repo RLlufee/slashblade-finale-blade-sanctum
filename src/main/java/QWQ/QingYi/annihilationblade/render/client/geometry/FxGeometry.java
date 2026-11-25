@@ -89,6 +89,15 @@ public final class FxGeometry {
    private final Vector3f tmpC = new Vector3f();
    private final Vector3f tmpD = new Vector3f();
    private final Vector3f tmpE = new Vector3f();
+   // 立方体 8 个角点复用池，消除 orientedCube 每帧上万次临时 Vector3f 分配
+   private final Vector3f cubeNNN = new Vector3f();
+   private final Vector3f cubePNN = new Vector3f();
+   private final Vector3f cubeNPN = new Vector3f();
+   private final Vector3f cubePPN = new Vector3f();
+   private final Vector3f cubeNNP = new Vector3f();
+   private final Vector3f cubePNP = new Vector3f();
+   private final Vector3f cubeNPP = new Vector3f();
+   private final Vector3f cubePPP = new Vector3f();
 
    public FxGeometry(FxFrame frame) {
       this(frame, false);
@@ -591,15 +600,15 @@ public final class FxGeometry {
    public void cube(Vector3f center, float halfX, float halfY, float halfZ, float r, float g, float b, float a) {
       this.orientedCube(
          center,
-         new Vector3f(halfX, 0.0F, 0.0F),
-         new Vector3f(0.0F, halfY, 0.0F),
-         new Vector3f(0.0F, 0.0F, halfZ),
+         this.tmpA.set(halfX, 0.0F, 0.0F),
+         this.tmpB.set(0.0F, halfY, 0.0F),
+         this.tmpC.set(0.0F, 0.0F, halfZ),
          r, g, b, a
       );
    }
 
    /**
-    * 按三个半轴向量绘制封闭的 3D 立方体，六个面均复用 rawQuad。
+    * 按三个半轴向量绘制封闭的 3D 立方体，六个面均复用 rawQuad 与预分配角点池，零临时对象分配。
     * 调用者可在本体层绘制实心暗盒，再在 HDR 层叠加同轴的 12 棱线框。
     */
    public void orientedCube(Vector3f center, Vector3f axisU, Vector3f axisV, Vector3f axisW, float r, float g, float b, float a) {
@@ -607,25 +616,34 @@ public final class FxGeometry {
          return;
       }
 
-      Vector3f u = new Vector3f(axisU);
-      Vector3f v = new Vector3f(axisV);
-      Vector3f w = new Vector3f(axisW);
-      Vector3f minusU = new Vector3f(u).negate();
-      Vector3f minusV = new Vector3f(v).negate();
-      Vector3f minusW = new Vector3f(w).negate();
+      float cx = center.x;
+      float cy = center.y;
+      float cz = center.z;
+      float ux = axisU.x;
+      float uy = axisU.y;
+      float uz = axisU.z;
+      float vx = axisV.x;
+      float vy = axisV.y;
+      float vz = axisV.z;
+      float wx = axisW.x;
+      float wy = axisW.y;
+      float wz = axisW.z;
 
-      this.rawQuad(new Vector3f(center).add(minusU).add(minusV).add(w), new Vector3f(center).add(u).add(minusV).add(w),
-         new Vector3f(center).add(u).add(v).add(w), new Vector3f(center).add(minusU).add(v).add(w), r, g, b, a);
-      this.rawQuad(new Vector3f(center).add(u).add(minusV).add(minusW), new Vector3f(center).add(minusU).add(minusV).add(minusW),
-         new Vector3f(center).add(minusU).add(v).add(minusW), new Vector3f(center).add(u).add(v).add(minusW), r, g, b, a);
-      this.rawQuad(new Vector3f(center).add(minusU).add(v).add(w), new Vector3f(center).add(u).add(v).add(w),
-         new Vector3f(center).add(u).add(v).add(minusW), new Vector3f(center).add(minusU).add(v).add(minusW), r, g, b, a);
-      this.rawQuad(new Vector3f(center).add(minusU).add(minusV).add(minusW), new Vector3f(center).add(u).add(minusV).add(minusW),
-         new Vector3f(center).add(u).add(minusV).add(w), new Vector3f(center).add(minusU).add(minusV).add(w), r, g, b, a);
-      this.rawQuad(new Vector3f(center).add(u).add(minusV).add(w), new Vector3f(center).add(u).add(minusV).add(minusW),
-         new Vector3f(center).add(u).add(v).add(minusW), new Vector3f(center).add(u).add(v).add(w), r, g, b, a);
-      this.rawQuad(new Vector3f(center).add(minusU).add(minusV).add(minusW), new Vector3f(center).add(minusU).add(minusV).add(w),
-         new Vector3f(center).add(minusU).add(v).add(w), new Vector3f(center).add(minusU).add(v).add(minusW), r, g, b, a);
+      this.cubeNNN.set(cx - ux - vx - wx, cy - uy - vy - wy, cz - uz - vz - wz);
+      this.cubePNN.set(cx + ux - vx - wx, cy + uy - vy - wy, cz + uz - vz - wz);
+      this.cubeNPN.set(cx - ux + vx - wx, cy - uy + vy - wy, cz - uz + vz - wz);
+      this.cubePPN.set(cx + ux + vx - wx, cy + uy + vy - wy, cz + uz + vz - wz);
+      this.cubeNNP.set(cx - ux - vx + wx, cy - uy - vy + wy, cz - uz - vz + wz);
+      this.cubePNP.set(cx + ux - vx + wx, cy + uy - vy + wy, cz + uz - vz + wz);
+      this.cubeNPP.set(cx - ux + vx + wx, cy - uy + vy + wy, cz - uz + vz + wz);
+      this.cubePPP.set(cx + ux + vx + wx, cy + uy + vy + wy, cz + uz + vz + wz);
+
+      this.rawQuad(this.cubeNNP, this.cubePNP, this.cubePPP, this.cubeNPP, r, g, b, a);
+      this.rawQuad(this.cubePNN, this.cubeNNN, this.cubeNPN, this.cubePPN, r, g, b, a);
+      this.rawQuad(this.cubeNPP, this.cubePPP, this.cubePPN, this.cubeNPN, r, g, b, a);
+      this.rawQuad(this.cubeNNN, this.cubePNN, this.cubePNP, this.cubeNNP, r, g, b, a);
+      this.rawQuad(this.cubePNP, this.cubePNN, this.cubePPN, this.cubePPP, r, g, b, a);
+      this.rawQuad(this.cubeNNN, this.cubeNNP, this.cubeNPP, this.cubeNPN, r, g, b, a);
    }
 
    /** 两点间的直线拖尾（火花、流星），头部宽、尾部尖。 */

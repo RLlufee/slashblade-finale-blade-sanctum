@@ -3,6 +3,26 @@
 #define FX_PI 3.14159265
 #define FX_TAU 6.28318531
 
+// 将 NaN / Inf 分量清洗为 0，阻断异常浮点在 HDR 泛光金字塔中扩散成全屏黑块。
+vec3 fxSanitize(vec3 c) {
+    bvec3 bad = bvec3(
+        isnan(c.r) || isinf(c.r),
+        isnan(c.g) || isinf(c.g),
+        isnan(c.b) || isinf(c.b)
+    );
+    return mix(c, vec3(0.0), bad);
+}
+
+// 避开 GLSL 150 atan(0.0, 0.0) 未定义奇点。
+float fxSafeAtan(float y, float x) {
+    return (abs(x) + abs(y) < 1.0e-6) ? 0.0 : atan(y, x);
+}
+
+// 避开 GLSL 150 pow(<=0, y) 在部分 AMD/Intel 驱动下的未定义 NaN。
+float fxSafePow(float base, float exponent) {
+    return pow(max(base, 1.0e-5), exponent);
+}
+
 float fxHash11(float p) {
     p = fract(p * 0.1031);
     p *= p + 33.33;

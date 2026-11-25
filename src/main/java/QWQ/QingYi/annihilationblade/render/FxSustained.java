@@ -57,12 +57,33 @@ public final class FxSustained {
       return handle;
    }
 
+   /**
+    * 增量更新持续特效（如断空每闪、裂界跳点、归墟处决、幻影齐爆）：
+    * 保留初始 {@code startEvent} 不被覆盖，仅记录最新增量包供中途进视野玩家在 START 后补发。
+    */
    public static void update(int handle, FxEventPacket event) {
       Entry entry = ACTIVE.get(handle);
       if (entry == null) {
          return;
       }
-      entry.event = event;
+      entry.latestUpdate = event;
+      FxSustainPacket packet = FxSustainPacket.update(handle, event);
+      for (ServerPlayer player : entry.onlineViewers()) {
+         ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
+      }
+   }
+
+   /**
+    * 全量快照更新持续特效（如虚无权域每阶段完整目标列表）：
+    * 直接用最新完整快照替换 {@code startEvent}，中途进视野玩家仅需收到最新完整快照即可。
+    */
+   public static void updateSnapshot(int handle, FxEventPacket event) {
+      Entry entry = ACTIVE.get(handle);
+      if (entry == null) {
+         return;
+      }
+      entry.startEvent = event;
+      entry.latestUpdate = null;
       FxSustainPacket packet = FxSustainPacket.update(handle, event);
       for (ServerPlayer player : entry.onlineViewers()) {
          ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), packet);
@@ -127,23 +148,25 @@ public final class FxSustained {
       final ServerLevel level;
       final int duration;
       final Set<UUID> viewers = new HashSet<>();
-      FxEventPacket event;
+      FxEventPacket startEvent;
+      FxEventPacket latestUpdate;
       int age;
 
       Entry(int handle, ServerLevel level, FxEventPacket event, int duration) {
          this.handle = handle;
          this.level = level;
-         this.event = event;
+         this.startEvent = event;
          this.duration = duration;
       }
 
       double viewRange() {
-         return Math.max(this.event.radius(), this.event.scale()) + VIEW_MARGIN;
+         FxEventPacket ref = this.latestUpdate != null ? this.latestUpdate : this.startEvent;
+         return Math.max(Math.max(this.startEvent.radius(), ref.radius()), Math.max(this.startEvent.scale(), ref.scale())) + VIEW_MARGIN;
       }
 
-      /** 给范围内尚未收到 START 的玩家补发（带已运行时间）。 */
+      /** 给范围内尚未收到 START 的玩家补发（带已运行时间；若有增量更新则紧随补发最新状态）。 */
       void syncViewers() {
-         Vec3 origin = this.event.origin();
+         Vec3 origin = this.startEvent.origin();
          double range = this.viewRange();
          double rangeSqr = range * range;
          for (ServerPlayer player : this.level.players()) {
@@ -154,7 +177,10 @@ public final class FxSustained {
             double dz = player.getZ() - origin.z;
             if (dx * dx + dz * dz <= rangeSqr) {
                this.viewers.add(player.getUUID());
-               ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), FxSustainPacket.start(this.handle, this.age, this.duration, this.event));
+               ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), FxSustainPacket.start(this.handle, this.age, this.duration, this.startEvent));
+               if (this.latestUpdate != null) {
+                  ModNetwork.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), FxSustainPacket.update(this.handle, this.latestUpdate));
+               }
             }
          }
       }

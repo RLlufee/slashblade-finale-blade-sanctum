@@ -29,5 +29,6 @@ float fxBloodPulse(vec3 local, float pulseRadius) {
         return 0.0;
     }
     float d = length(local.xz);
-    return exp(-pow((d - pulseRadius) / 0.9, 2.0));
+    float q = (d - pulseRadius) / 0.9;
+    return exp(-(q * q));
 }

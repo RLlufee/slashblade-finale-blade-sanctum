@@ -22,8 +22,10 @@ import net.minecraftforge.fml.common.Mod.EventBusSubscriber.Bus;
  * 很容易让原版缓存与真实状态不一致，导致后续方块/实体渲染错乱。走 ShaderInstance + BufferUploader
  * 可以让所有状态变更都经过原版缓存。
  * <p>
- * 注意：json 中禁止声明 "blend" 字段——ShaderInstance 会在每次 apply 时强制套用并改写全局混合状态缓存，
- * 混合模式统一由 {@link FxPipeline} 用 RenderSystem 显式设置。
+ * 注意：json 中必须与原版 61 个 core shader 一致声明标准 "blend" 字段（add / srcalpha / 1-srcalpha）。
+ * 原版 {@link com.mojang.blaze3d.shaders.BlendMode#apply()} 仅在 {@code !this.equals(lastApplied)} 时改写 GL 状态；
+ * 若省略 "blend"，MC 会默认构造 {@code opaque = true}，反而会在首次 apply 时强行关闭混合并在退出管线后污染后续原版绘制。
+ * 配合 {@link FxPipeline} 入口对齐 {@code lastApplied}，管线内部各通道的真实混合模式统一由 {@code RenderSystem} 精确控制。
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = Annihilationblade.MODID, bus = Bus.MOD, value = Dist.CLIENT)

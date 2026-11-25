@@ -75,7 +75,7 @@ public final class FxClientDispatcher {
             if (packet.event() == null) {
                return;
             }
-            FxInstance instance = create(packet.event());
+            FxInstance instance = create(packet.event(), packet.elapsed());
             if (instance != null) {
                instance.bindSustained(packet.handle(), packet.elapsed(), packet.duration());
                FxManager.add(instance);
@@ -98,6 +98,10 @@ public final class FxClientDispatcher {
    }
 
    private static FxInstance create(FxEventPacket packet) {
+      return create(packet, 0);
+   }
+
+   private static FxInstance create(FxEventPacket packet, int initialAge) {
       ClientLevel level = Minecraft.getInstance().level;
       if (level == null) {
          return null;
@@ -107,6 +111,11 @@ public final class FxClientDispatcher {
          Annihilationblade.LOGGER.warn("[AnnihilationBlade FX] Unknown effect type {}", packet.type());
          return null;
       }
-      return factory.apply(level, packet);
+      FxInstance.setPendingInitialAge(initialAge);
+      try {
+         return factory.apply(level, packet);
+      } finally {
+         FxInstance.clearPendingInitialAge();
+      }
    }
 }

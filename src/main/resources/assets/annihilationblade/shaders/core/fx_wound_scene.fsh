@@ -56,12 +56,12 @@ void applyVortex(
         return;
     }
 
-    float fall = 1.0 - r;
+    float fall = max(1.0 - r, 1.0e-5);
     float smoothFall = fall * fall * (3.0 - 2.0 * fall);
-    float coreCurve = pow(fall, 2.35);
+    float coreCurve = fxSafePow(fall, 2.35);
 
     // 极坐标对数螺旋扭角 + 空气剪切细纹
-    float theta = atan(rel.y, rel.x);
+    float theta = fxSafeAtan(rel.y, rel.x);
     float logR = log(max(r, 0.018));
     float airShear = sin(theta * 3.0 + logR * 7.2 - FxTime * 15.0 * sign(prm.x + 1.0e-4));
     float rippleMod = 1.0 + 0.065 * airShear * smoothFall * Meta.w;
@@ -69,7 +69,7 @@ void applyVortex(
     vec2 twisted = rotate2(rel, angle);
 
     // 径向向心抽吸：采样坐标外移 (>1) 使画面与活体向涡心收缩拉细；回弹期 (<1) 产生弹性复原
-    float pull = clamp(prm.y * pow(fall, 1.55) * occMask, -0.26, 0.92);
+    float pull = clamp(prm.y * fxSafePow(fall, 1.55) * occMask, -0.26, 0.92);
     float radialScale = 1.0 + pull * (0.70 + 1.45 * smoothFall);
     vec2 warpedRel = twisted * radialScale;
 
@@ -100,9 +100,9 @@ void applyVortex(
     }
 
     // 外圈空间螺旋剪切高光（让背景本身浮现淡淡的紫红扭曲涡纹）
-    float band = pow(max(0.5 + 0.5 * airShear, 0.0), 4.0) * smoothstep(0.06, 0.32, r) * smoothFall;
+    float band = fxSafePow(0.5 + 0.5 * airShear, 4.0) * smoothstep(0.06, 0.32, r) * smoothFall;
     spiralSheen += band * intensity * occMask * Meta.w;
-    darkMask = max(darkMask, pow(fall, 2.2) * 0.42 * intensity * occMask);
+    darkMask = max(darkMask, fxSafePow(fall, 2.2) * 0.42 * intensity * occMask);
 }
 
 void main() {

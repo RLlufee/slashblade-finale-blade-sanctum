@@ -31,9 +31,9 @@ public final class TerminusTooltipEvents {
       }
 
       Minecraft minecraft = Minecraft.getInstance();
-      TooltipFlag tooltipFlag = minecraft.options.advancedItemTooltips ? TooltipFlag.Default.ADVANCED : TooltipFlag.Default.NORMAL;
-      List<Component> textComponents = stack.getTooltipLines(minecraft.player, tooltipFlag);
-      TerminusTooltipRenderer.render(event.getGraphics(), event.getFont(), stack, textComponents, event.getX(), event.getY());
+      // 仅传递物品标题，避免每帧调用 stack.getTooltipLines 重复派发 ItemTooltipEvent
+      List<Component> titleOnly = List.of(stack.getHoverName());
+      TerminusTooltipRenderer.render(event.getGraphics(), event.getFont(), stack, titleOnly, event.getX(), event.getY());
       event.setCanceled(true);
    }
 }

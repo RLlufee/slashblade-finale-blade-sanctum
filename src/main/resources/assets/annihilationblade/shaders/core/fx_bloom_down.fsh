@@ -1,5 +1,7 @@
 #version 150
 
+#moj_import <annihilationblade:fx_common.glsl>
+
 // 泛光降采样（13 taps，双线性加权）。
 // 首级合并网格特效层与体积层，执行 Soft-Knee 亮度阈值与 Karis Average，
 // 防止低亮底图把画面糊成一团雾，同时消除 1~2px 高能细线移动时的闪烁。
@@ -34,14 +36,14 @@ vec3 prefilterColor(vec3 color) {
 
 vec3 tap(vec2 offset) {
     vec2 uv = texCoord + offset * TexelSize;
-    vec3 color = texture(Sampler0, uv).rgb;
+    vec3 color = fxSanitize(texture(Sampler0, uv).rgb);
     if (VolumeWeight > 0.5) {
-        color += texture(Sampler1, uv).rgb;
+        color += fxSanitize(texture(Sampler1, uv).rgb);
     }
     if (Prefilter > 0.5) {
         color = prefilterColor(color);
     }
-    return color;
+    return fxSanitize(color);
 }
 
 float karisWeight(vec3 c) {

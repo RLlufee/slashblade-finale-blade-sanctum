@@ -68,7 +68,7 @@ void main() {
             float inside = fxBloodMask(-Zone.xyz, Zone, ZoneExtra) * strength;
             if (inside > 0.0) {
                 float moon = max(dot(rd, normalize(BLOOD_MOON_DIR)), 0.0);
-                acc += vec3(0.9, 0.05, 0.06) * (pow(moon, 600.0) * 2.5 + pow(moon, 60.0) * 0.25) * inside;
+                acc += vec3(0.9, 0.05, 0.06) * (fxSafePow(moon, 600.0) * 2.5 + fxSafePow(moon, 60.0) * 0.25) * inside;
             }
         }
     }

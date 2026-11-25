@@ -48,7 +48,8 @@ void main() {
     // 冲击波：沿球壳轮廓的强力径向空间弯折与棱镜色边
     float shockRim = 0.0;
     if (Shock.y > 0.0 && centerAhead) {
-        float ring = exp(-pow((dRay - Shock.x) / max(Shock.z, 0.1), 2.0));
+        float shockQ = (dRay - Shock.x) / max(Shock.z, 0.1);
+        float ring = exp(-(shockQ * shockQ));
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dRay * dRay, 0.0));
         vec2 dir = uv - cuv;
         float len = length(dir);
@@ -82,11 +83,18 @@ void main() {
             vor = fxVoronoi3(p / max(Extra.z, 0.25) + seed, cell);
             float cut = clamp(Extra.w, 0.0, 1.5);
             vec3 h = fxHash33(cell + 17.0);
+            // 站在碎裂球内背对球心时 cuv 会发散，回退到屏幕中心并对方向向量限幅防全屏拉丝
+            vec2 safeCuv = centerAhead ? clamp(cuv, vec2(-0.5), vec2(1.5)) : vec2(0.5);
+            vec2 toCenter = safeCuv - uv;
+            float toCenterLen = length(toCenter);
+            if (toCenterLen > 0.85) {
+                toCenter *= 0.85 / toCenterLen;
+            }
             vec2 shard = (h.xy - 0.5) * (0.022 + 0.055 * collapse + 0.028 * cut);
-            shard += (cuv - uv) * (collapse * 0.12 + cut * 0.05) * h.z;
+            shard += toCenter * (collapse * 0.12 + cut * 0.05) * h.z;
             // 单块碎片的独立棱镜倍镜折射，呈现玻璃碎裂与错位放大感
             float facetZoom = 1.0 + (0.14 + 0.34 * cut) * (0.35 + 0.65 * h.z);
-            vec2 facetPivot = clamp(cuv + (h.xy - 0.5) * 0.24, 0.05, 0.95);
+            vec2 facetPivot = clamp(safeCuv + (h.xy - 0.5) * 0.24, 0.05, 0.95);
             vec2 prismZoom = clamp((facetPivot - uv) * (1.0 - 1.0 / facetZoom), vec2(-0.08), vec2(0.08));
             offset += (shard + prismZoom) * fieldMask;
         }

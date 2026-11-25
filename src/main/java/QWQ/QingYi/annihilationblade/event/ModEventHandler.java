@@ -62,7 +62,7 @@ public class ModEventHandler {
       if (!isGodBlade(player.getMainHandItem()) && !isGodBlade(player.getOffhandItem())) {
          UUID id = player.getUUID();
          Integer lastScan = LAST_BLADE_SCAN_TICK.get(id);
-         if (lastScan != null && player.tickCount - lastScan < INVENTORY_SCAN_INTERVAL) {
+         if (lastScan != null && player.tickCount >= lastScan && player.tickCount - lastScan < INVENTORY_SCAN_INTERVAL) {
             return HAS_BLADE_CACHE.getOrDefault(id, false);
          }
 
@@ -152,14 +152,22 @@ public class ModEventHandler {
 
       while (it.hasNext()) {
          String text = it.next().getString();
-         if (text.contains("\u653b\u51fb\u4f24\u5bb3")
+         if (text.contains("攻击伤害")
+            || text.contains("攻擊傷害")
             || text.contains("Attack Damage")
-            || text.contains("\u5728\u4e3b\u624b\u65f6")
+            || text.contains("在主手时")
+            || text.contains("在慣用手時")
             || text.contains("When in main hand")
-            || text.contains("\u653b\u51fb\u901f\u5ea6")
+            || text.contains("When in Main Hand")
+            || text.contains("攻击速度")
+            || text.contains("攻擊速度")
             || text.contains("Attack Speed")
-            || text.contains("\u8303\u56f4")
-            || text.contains("Range")) {
+            || text.contains("攻击范围")
+            || text.contains("攻擊範圍")
+            || text.contains("攻击距离")
+            || text.contains("攻擊距離")
+            || text.contains("Attack Range")
+            || text.contains("Entity Reach")) {
             it.remove();
          }
       }
@@ -191,12 +199,18 @@ public class ModEventHandler {
 
       Entity source = event.getSource().getEntity();
       Entity directSource = event.getSource().getDirectEntity();
-      if (source instanceof ServerPlayer player) {
-         boolean isDirect = isDirectGodBladeAttack(event.getSource(), player);
-         boolean isSlashEntity = isGodBladeSlashEntityAttack(directSource, player);
-         if ((isDirect || isSlashEntity) && SlashBladeTargeting.canAttack(player, event.getEntity())) {
-            ItemStack blade = isDirect || isGodBlade(player.getMainHandItem()) ? player.getMainHandItem() : player.getOffhandItem();
-            ISlashBladeState state = blade.getCapability(ItemSlashBlade.BLADESTATE).orElse(null);
+      if (source instanceof ServerPlayer player && SlashBladeTargeting.canAttack(player, event.getEntity())) {
+         boolean isDirect = directSource == player && "player".equals(event.getSource().getMsgId());
+         boolean isSlashEntity = directSource != null && directSource.getType().toString().contains("slashblade");
+         if (isDirect || isSlashEntity) {
+            // 开放给任意挂载 WORLD_RIFT 的拔刀剑（支持 SE 独立拆出移植）
+            ItemStack main = player.getMainHandItem();
+            ItemStack off = player.getOffhandItem();
+            ISlashBladeState mainState = main.getCapability(ItemSlashBlade.BLADESTATE).orElse(null);
+            ISlashBladeState state = (mainState != null && !mainState.isBroken() && !mainState.isSealed()
+                  && mainState.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId()))
+               ? mainState
+               : (!isDirect ? off.getCapability(ItemSlashBlade.BLADESTATE).orElse(null) : null);
             // 仅在刀上挂载 WORLD_RIFT 且断空处于关闭状态（非激活、且配置/Shift/Ctrl 关闭或无断空）时走独立单链裂界
             if (state != null
                   && !state.isBroken()
@@ -266,8 +280,10 @@ public class ModEventHandler {
                   player.onUpdateAbilities();
                }
 
-               if (player.getY() < -64.0) {
-                  player.teleportTo(player.getX(), 320.0, player.getZ());
+               int minBuildY = player.level().getMinBuildHeight();
+               if (player.getY() < (double)minBuildY) {
+                  double targetY = resolveVoidRescueY(player);
+                  player.teleportTo(player.getX(), targetY, player.getZ());
                   player.setDeltaMovement(0.0, 0.0, 0.0);
                   if (!player.getAbilities().flying) {
                      player.getAbilities().flying = true;
@@ -293,6 +309,61 @@ public class ModEventHandler {
    @SubscribeEvent
    public static void onPlayerChangedDimension(PlayerChangedDimensionEvent event) {
       clearPlayerState(event.getEntity());
+   }
+
+   @SubscribeEvent
+   public static void onPlayerRespawn(net.minecraftforge.event.entity.player.PlayerEvent.PlayerRespawnEvent event) {
+      UUID id = event.getEntity().getUUID();
+      HAS_BLADE_CACHE.remove(id);
+      LAST_BLADE_SCAN_TICK.remove(id);
+      PLAYERS_WITH_FLIGHT.remove(id);
+   }
+
+   @SubscribeEvent
+   public static void onPlayerClone(net.minecraftforge.event.entity.player.PlayerEvent.Clone event) {
+      UUID id = event.getEntity().getUUID();
+      HAS_BLADE_CACHE.remove(id);
+      LAST_BLADE_SCAN_TICK.remove(id);
+      PLAYERS_WITH_FLIGHT.remove(id);
+   }
+
+   @SubscribeEvent
+   public static void onServerStopping(net.minecraftforge.event.server.ServerStoppingEvent event) {
+      PLAYERS_WITH_FLIGHT.clear();
+      HAS_BLADE_CACHE.clear();
+      LAST_BLADE_SCAN_TICK.clear();
+   }
+
+   /**
+    * 适配不同维度高度的虚空救助落点：
+    * 下界等带基岩顶盖维度优先在顶盖下方寻找安全空腔，避免把玩家传到基岩顶层 Y=320；
+    * 主世界/末地等无顶盖维度直接送回当前维度最高建筑高度。
+    */
+   private static double resolveVoidRescueY(Player player) {
+      net.minecraft.world.level.Level level = player.level();
+      if (!level.dimensionType().hasCeiling()) {
+         return level.getMaxBuildHeight();
+      }
+      int minY = level.getMinBuildHeight() + 8;
+      int maxSafeY = Math.max(minY, level.dimensionType().logicalHeight() - 12);
+      int preferredY = Math.min(maxSafeY, Math.max(minY, level.getMinBuildHeight() + 64));
+      net.minecraft.core.BlockPos base = net.minecraft.core.BlockPos.containing(player.getX(), preferredY, player.getZ());
+      for (int offset = 0; offset <= maxSafeY - minY; offset++) {
+         int up = preferredY + offset;
+         if (up <= maxSafeY && isAirHeadroom(level, base.atY(up))) {
+            return up;
+         }
+         int down = preferredY - offset;
+         if (offset > 0 && down >= minY && isAirHeadroom(level, base.atY(down))) {
+            return down;
+         }
+      }
+      return preferredY;
+   }
+
+   private static boolean isAirHeadroom(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos feet) {
+      return level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
+         && level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty();
    }
 
    private static void clearPlayerState(Player player) {

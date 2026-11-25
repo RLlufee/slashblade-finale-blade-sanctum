@@ -4,6 +4,7 @@ import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusEchoPattern
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.WorldRiftChain;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
+import QWQ.QingYi.annihilationblade.common.EntitySuspensionManager;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
@@ -32,9 +33,11 @@ import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.EvokerFangs;
 import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ThrownTrident;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.entity.PartEntity;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.entity.ProjectileImpactEvent;
@@ -61,11 +64,11 @@ public class TerminusEcho extends SpecialEffect {
    /** 轻量偏折镜波纹（无合法攻击者或主冷却期弹射物拦截）的独立节流间隔，防止岩浆/箭雨高频刷屏。 */
    private static final int DEFLECT_ONLY_COOLDOWN_TICKS = 10;
 
+   private static final String SUSPENSION_PREFIX = "terminus_echo:";
    private static final Map<UUID, List<CounterSequence>> ACTIVE = new HashMap<>();
    private static final Map<UUID, Long> LAST_COUNTER = new HashMap<>();
    private static final Map<UUID, Long> LAST_DEFLECT_ONLY = new HashMap<>();
    private static final Set<UUID> LOCKED_TARGETS = new HashSet<>();
-   private static final Map<UUID, TargetSuspension> SUSPENSIONS = new HashMap<>();
    private static int counterExecutionDepth;
 
    public TerminusEcho() {
@@ -79,7 +82,7 @@ public class TerminusEcho extends SpecialEffect {
 
    /** 指定实体当前是否正处于归墟回响因果锁印中（供因果坍缩微扰定身避让）。 */
    public static boolean isEntityLocked(UUID entityUuid) {
-      return entityUuid != null && (LOCKED_TARGETS.contains(entityUuid) || SUSPENSIONS.containsKey(entityUuid));
+      return entityUuid != null && (LOCKED_TARGETS.contains(entityUuid) || EntitySuspensionManager.isHeldByPrefix(entityUuid, SUSPENSION_PREFIX));
    }
 
    /** 玩家离线、换维度或死亡时彻底清理其进行中的因果反噬与定身快照。 */
@@ -123,16 +126,16 @@ public class TerminusEcho extends SpecialEffect {
       Vec3 incomingDir = resolveIncomingDirection(defender, source, attacker, impactPos);
       boolean triggered = triggerCounterOrDeflect(defender, attacker, incomingDir, isProjectile, config);
 
-      // 若本次伤害来自敌方投射物且反噬或偏折镜成功接管，立刻清理残留投射物避免二次碰触
+      // 若本次伤害来自敌方投射物且反噬或偏折镜成功接管，安全化解投射物（保护玩家投掷的忠诚三叉戟不被永久销毁）
       if (triggered && direct instanceof Projectile projectile && !projectile.isRemoved() && projectile.getOwner() != defender) {
-         projectile.discard();
+         neutralizeProjectile(projectile, defender);
       }
       return triggered;
    }
 
    /**
-    * 兼容「背包无湮灭之刃，但主/副手持有其他挂载了 terminus_echo SE 的拔刀剑」时的受击拦截入口。
-    * 仅当确认存在合法因果反噬或偏折反馈时才取消本次受击伤害，不越权赋予常规拔刀剑永久无敌。
+    * 兼容「背包无湮灭之刃，但持有其他挂载了 terminus_echo SE 的拔刀剑」时的受击拦截入口。
+    * 统一遵循 {@code config.requireHeld}，仅当确认存在合法因果反噬时才取消本次受击伤害，不越权赋予常规拔刀剑永久无敌。
     */
    public static boolean tryInterceptExternalAttack(ServerPlayer defender, LivingAttackEvent event) {
       if (defender == null || event == null || defender.level().isClientSide() || defender.isSpectator() || !defender.isAlive()) {
@@ -146,7 +149,7 @@ public class TerminusEcho extends SpecialEffect {
          return false;
       }
       ModConfig.TerminusEcho config = ModConfig.COMMON.annihilationBlade.terminusEcho;
-      if (!config.enabled.getValue() || !hasEligibleEchoBlade(defender, true)) {
+      if (!config.enabled.getValue() || !hasEligibleEchoBlade(defender, config.requireHeld.getValue())) {
          return false;
       }
       LivingEntity attacker = resolveAttacker(source);
@@ -158,7 +161,7 @@ public class TerminusEcho extends SpecialEffect {
       if (tryLaunchCounter(defender, attacker, incomingDir, isProjectile, config)) {
          event.setCanceled(true);
          if (source.getDirectEntity() instanceof Projectile projectile && !projectile.isRemoved() && projectile.getOwner() != defender) {
-            projectile.discard();
+            neutralizeProjectile(projectile, defender);
          }
          return true;
       }
@@ -193,7 +196,7 @@ public class TerminusEcho extends SpecialEffect {
          return;
       }
 
-      LivingEntity attacker = owner instanceof LivingEntity living ? living : null;
+      LivingEntity attacker = unwrapLiving(owner);
       Vec3 defenderCenter = SpecialEffectSupport.centerOf(defender);
       Vec3 impactPos = hit.getLocation();
       Vec3 incomingDir;
@@ -207,14 +210,15 @@ public class TerminusEcho extends SpecialEffect {
          incomingDir = defender.getLookAngle();
       }
 
+      boolean hasAnnihilationProtection = SpecialEffectSupport.hasAnnihilationBlade(defender);
       boolean handled = tryLaunchCounter(defender, attacker, incomingDir, true, config);
-      if (!handled) {
-         // 主反噬冷却中或无合法射手（例如发射器箭矢）：若独立偏折节流就绪，仍弹出偏折镜吞噬弹射物，保持清脆拦截手感
+      if (!handled && (hasAnnihilationProtection || attacker != null)) {
+         // 湮灭之刃本体拦截一切弹射物；外置移植 SE 仅拦截存在明确射手的弹射物，避免对无主发射器永久白嫖无敌
          handled = tryEmitDeflectOnly(defender, incomingDir, true, config);
       }
       if (handled) {
          event.setImpactResult(ProjectileImpactEvent.ImpactResult.STOP_AT_CURRENT_NO_DAMAGE);
-         projectile.discard();
+         neutralizeProjectile(projectile, defender);
       }
    }
 
@@ -226,9 +230,9 @@ public class TerminusEcho extends SpecialEffect {
       if (tryLaunchCounter(defender, attacker, incomingDir, isProjectile, config)) {
          return true;
       }
-      // 无合法攻击者、超距或主反噬冷却期：弹射物始终允许轻量偏折反馈；环境无主伤害受 deflect_environment_fx 控制
-      if (isProjectile || (attacker == null && config.deflectEnvironmentFx.getValue())
-            || (attacker != null && attacker != defender && config.deflectEnvironmentFx.getValue())) {
+      // 存在明确外部攻击者（冷却期/满并发）或弹射物时，始终允许弹出轻量偏折镜反馈；
+      // deflect_environment_fx 严格仅控制无明确攻击者的环境伤害（岩浆/窒息/摔落等）。
+      if (isProjectile || (attacker != null && attacker != defender) || (attacker == null && config.deflectEnvironmentFx.getValue())) {
          return tryEmitDeflectOnly(defender, incomingDir, isProjectile, config);
       }
       return false;
@@ -303,6 +307,7 @@ public class TerminusEcho extends SpecialEffect {
          return;
       }
       boolean enabled = ModConfig.COMMON.annihilationBlade.terminusEcho.enabled.getValue();
+      List<PendingCounterExecution> pendingExecutions = new ArrayList<>();
       Iterator<Map.Entry<UUID, List<CounterSequence>>> playerIt = ACTIVE.entrySet().iterator();
       while (playerIt.hasNext()) {
          List<CounterSequence> sequences = playerIt.next().getValue();
@@ -337,14 +342,30 @@ public class TerminusEcho extends SpecialEffect {
             }
 
             if (elapsed >= TerminusEchoPattern.EXECUTE_TICK) {
-               executeSequence(sequence, target);
                seqIt.remove();
+               pendingExecutions.add(new PendingCounterExecution(sequence, target));
             }
          }
          if (sequences.isEmpty()) {
             playerIt.remove();
          }
       }
+
+      // 延后至外层 ACTIVE 迭代完毕再执行处决，防止 PVP 反杀玩家时 LivingDeathEvent 修改 ACTIVE 引发 CME
+      for (PendingCounterExecution execution : pendingExecutions) {
+         if (execution.target.isAlive() && !execution.target.isRemoved()
+               && execution.sequence.defender.isAlive()
+               && !execution.sequence.defender.isRemoved()
+               && execution.sequence.defender.serverLevel() == execution.sequence.level) {
+            executeSequence(execution.sequence, execution.target);
+         } else {
+            releaseSequenceTarget(execution.sequence);
+            AnnihilationFxEvents.echoEnd(execution.sequence.fxHandle);
+         }
+      }
+   }
+
+   private record PendingCounterExecution(CounterSequence sequence, LivingEntity target) {
    }
 
    private static void executeSequence(CounterSequence sequence, LivingEntity target) {
@@ -379,6 +400,9 @@ public class TerminusEcho extends SpecialEffect {
 
    @SubscribeEvent
    public static void onLivingDeath(LivingDeathEvent event) {
+      if (event.getEntity().level().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof ServerPlayer player) {
          clearPlayer(player.getUUID());
       }
@@ -387,6 +411,9 @@ public class TerminusEcho extends SpecialEffect {
 
    @SubscribeEvent
    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+      if (event.getLevel().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof LivingEntity living) {
          releaseSuspensionByEntity(living);
       }
@@ -404,32 +431,25 @@ public class TerminusEcho extends SpecialEffect {
       LAST_COUNTER.clear();
       LAST_DEFLECT_ONLY.clear();
       LOCKED_TARGETS.clear();
-      SUSPENSIONS.clear();
       counterExecutionDepth = 0;
    }
 
-   // ───────────────────────────── 短时定身快照管理 ─────────────────────────────
+   // ───────────────────────────── 短时定身快照管理（委托全局 EntitySuspensionManager） ─────────────────────────────
 
    private static void trySuspendTarget(CounterSequence sequence, LivingEntity target) {
       if (target instanceof Player) {
          return;
       }
       UUID uuid = target.getUUID();
-      // 严格避让已被裂界、虚无权域或幻影审判锁定的实体，避免覆写原始 AI/重力快照
-      if (SUSPENSIONS.containsKey(uuid)
+      // 避让已被裂界、虚无权域或幻影审判独占锁定的实体；即使此前已被因果坍缩施加无重力，统一管理器也会保留真正原始快照
+      if (EntitySuspensionManager.isHeldByPrefix(uuid, SUSPENSION_PREFIX)
             || WorldRiftChain.isEntitySuspended(uuid)
             || VoidDominion.isEntitySuspended(uuid)
             || PhantomJudgement.isEntityLocked(uuid)) {
          return;
       }
-      boolean wasNoGravity = target.isNoGravity();
-      boolean wasNoAi = target instanceof Mob mob && mob.isNoAi();
-      SUSPENSIONS.put(uuid, new TargetSuspension(target, wasNoGravity, wasNoAi, target.getDeltaMovement()));
+      EntitySuspensionManager.acquire(target, sequence.suspensionToken, true, true);
       sequence.suspended = true;
-      target.setNoGravity(true);
-      if (target instanceof Mob mob) {
-         mob.setNoAi(true);
-      }
       target.setDeltaMovement(0.0, 0.02, 0.0);
       target.hurtMarked = true;
    }
@@ -445,10 +465,9 @@ public class TerminusEcho extends SpecialEffect {
       LOCKED_TARGETS.remove(sequence.targetUuid);
       if (sequence.suspended) {
          sequence.suspended = false;
-         TargetSuspension suspension = SUSPENSIONS.remove(sequence.targetUuid);
-         if (suspension != null) {
-            suspension.restore();
-         }
+         Entity raw = sequence.level.getEntity(sequence.targetEntityId);
+         LivingEntity resolved = raw instanceof LivingEntity living && living.getUUID().equals(sequence.targetUuid) ? living : null;
+         EntitySuspensionManager.release(sequence.targetUuid, resolved, sequence.suspensionToken);
       }
    }
 
@@ -458,9 +477,14 @@ public class TerminusEcho extends SpecialEffect {
       }
       UUID uuid = entity.getUUID();
       LOCKED_TARGETS.remove(uuid);
-      TargetSuspension suspension = SUSPENSIONS.remove(uuid);
-      if (suspension != null) {
-         suspension.restore();
+      LivingEntity resolved = entity instanceof LivingEntity living ? living : null;
+      for (List<CounterSequence> sequences : ACTIVE.values()) {
+         for (CounterSequence sequence : sequences) {
+            if (sequence.suspended && sequence.targetUuid.equals(uuid)) {
+               sequence.suspended = false;
+               EntitySuspensionManager.release(uuid, resolved, sequence.suspensionToken);
+            }
+         }
       }
    }
 
@@ -493,18 +517,54 @@ public class TerminusEcho extends SpecialEffect {
          && state.hasSpecialEffect(ModSpecialEffects.TERMINUS_ECHO.getId());
    }
 
+   /**
+    * 安全化解被偏折镜截停的敌方弹射物：
+    * 对玩家投掷的三叉戟（尤其附魔忠诚）绝不直接 {@code discard()}，改为反向弹开使其自然落地或触发忠诚飞回原主人；
+    * 其余常规弹射物则直接清除。
+    */
+   private static void neutralizeProjectile(Projectile projectile, ServerPlayer defender) {
+      if (projectile == null || projectile.isRemoved()) {
+         return;
+      }
+      if (projectile instanceof ThrownTrident trident && trident.getOwner() instanceof Player) {
+         Vec3 pushDir = projectile.position().subtract(SpecialEffectSupport.centerOf(defender));
+         Vec3 away = pushDir.lengthSqr() > 1.0E-4 ? pushDir.normalize() : defender.getLookAngle().normalize();
+         trident.setDeltaMovement(away.scale(0.45).add(0.0, 0.2, 0.0));
+         trident.hurtMarked = true;
+         trident.hasImpulse = true;
+         return;
+      }
+      projectile.discard();
+   }
+
+   /** 解包多部位 Boss（如末影龙 {@link PartEntity}）并返回真实宿主活体。 */
+   @Nullable
+   private static LivingEntity unwrapLiving(@Nullable Entity entity) {
+      Entity current = entity;
+      int guard = 0;
+      while (current instanceof PartEntity<?> part && guard++ < 4) {
+         current = part.getParent();
+      }
+      return current instanceof LivingEntity living ? living : null;
+   }
+
    @Nullable
    private static LivingEntity resolveAttacker(DamageSource source) {
       Entity entity = source.getEntity();
-      if (entity instanceof LivingEntity living) {
-         return living;
+      LivingEntity resolved = unwrapLiving(entity);
+      if (resolved != null) {
+         return resolved;
       }
       Entity direct = source.getDirectEntity();
-      if (direct instanceof Projectile projectile && projectile.getOwner() instanceof LivingEntity owner) {
-         return owner;
+      if (direct instanceof Projectile projectile) {
+         LivingEntity owner = unwrapLiving(projectile.getOwner());
+         if (owner != null) {
+            return owner;
+         }
       }
-      if (direct instanceof LivingEntity living) {
-         return living;
+      resolved = unwrapLiving(direct);
+      if (resolved != null) {
+         return resolved;
       }
       if (direct instanceof AreaEffectCloud cloud && cloud.getOwner() != null) {
          return cloud.getOwner();
@@ -577,6 +637,7 @@ public class TerminusEcho extends SpecialEffect {
       final boolean projectileIntercepted;
       final long seed;
       final long startGameTime;
+      final String suspensionToken;
       boolean locked;
       boolean suspended;
 
@@ -595,34 +656,7 @@ public class TerminusEcho extends SpecialEffect {
          this.projectileIntercepted = projectileIntercepted;
          this.seed = seed;
          this.startGameTime = startGameTime;
-      }
-   }
-
-   private static final class TargetSuspension {
-      final LivingEntity entity;
-      final boolean wasNoGravity;
-      final boolean wasNoAi;
-      final Vec3 originalVelocity;
-
-      private TargetSuspension(LivingEntity entity, boolean wasNoGravity, boolean wasNoAi, Vec3 originalVelocity) {
-         this.entity = entity;
-         this.wasNoGravity = wasNoGravity;
-         this.wasNoAi = wasNoAi;
-         this.originalVelocity = originalVelocity;
-      }
-
-      void restore() {
-         if (this.entity.isRemoved()) {
-            return;
-         }
-         this.entity.setNoGravity(this.wasNoGravity);
-         if (this.entity instanceof Mob mob) {
-            mob.setNoAi(this.wasNoAi);
-         }
-         if (this.entity.isAlive()) {
-            this.entity.setDeltaMovement(this.originalVelocity);
-            this.entity.hurtMarked = true;
-         }
+         this.suspensionToken = SUSPENSION_PREFIX + defender.getUUID() + ":" + fxHandle;
       }
    }
 }

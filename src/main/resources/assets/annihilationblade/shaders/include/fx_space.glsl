@@ -44,7 +44,9 @@ float fxSurfaceGrid(vec3 local, vec3 normal, float cell, float width) {
 
 // 射线（起点为相机原点）与轴对齐包围盒求交，返回 (tNear, tFar)；tFar < tNear 表示未命中。
 vec2 fxBox(vec3 rd, vec3 boxMin, vec3 boxMax) {
-    vec3 inv = 1.0 / (sign(rd) * max(abs(rd), vec3(1.0e-6)));
+    // 避开 rd 分量为 0 时 sign(0.0) == 0.0 导致的除零 NaN
+    vec3 safeRd = mix(rd, vec3(1.0e-6), lessThan(abs(rd), vec3(1.0e-6)));
+    vec3 inv = 1.0 / safeRd;
     vec3 t0 = boxMin * inv;
     vec3 t1 = boxMax * inv;
     vec3 tMin = min(t0, t1);

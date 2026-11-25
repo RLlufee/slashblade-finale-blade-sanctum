@@ -61,7 +61,8 @@ void main() {
         sampleUv += fxLensOffset(uv, suv, dStar, Star.w);
     }
     if (Shock.y > 0.0 && starAhead) {
-        float ring = exp(-pow((dStar - Shock.x) / max(Shock.z, 0.1), 2.0));
+        float qShock = (dStar - Shock.x) / max(Shock.z, 0.1);
+        float ring = exp(-(qShock * qShock));
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dStar * dStar, 0.0));
         vec2 dir = uv - suv;
         float len = length(dir);

@@ -160,7 +160,7 @@ public final class TerminusEchoFx extends FxInstance {
          this.targetWidth = Math.max(0.6F, packet.radius());
          this.targetHeight = Math.max(0.8F, packet.scale());
          this.initMirrorDebris();
-         this.applyExecution(level, packet, 0.0F);
+         this.applyExecution(level, packet, this.age);
       } else if (this.deflectOnly) {
          this.lifetime = TerminusEchoPattern.DEFLECT_ONLY_LIFETIME;
          this.hasMirror = true;

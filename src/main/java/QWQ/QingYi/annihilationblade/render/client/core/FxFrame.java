@@ -49,13 +49,18 @@ public final class FxFrame {
       return new Vector3f((float)(world.x - this.camera.x), (float)(world.y - this.camera.y), (float)(world.z - this.camera.z));
    }
 
-   /** 世界坐标投影到屏幕 UV（0..1，左下为原点）；位于相机背后时返回 null。 */
+   /** 世界坐标投影到屏幕 UV（0..1，左下为原点）；位于相机背后或紧贴近平面发散时返回 null。 */
    public float[] screenUv(Vec3 world) {
       Vector3f rel = this.rel(world);
       Vector4f clip = this.viewProjection.transform(new Vector4f(rel.x, rel.y, rel.z, 1.0F));
-      if (clip.w <= 0.05F) {
+      if (clip.w <= 0.12F) {
          return null;
       }
-      return new float[]{clip.x / clip.w * 0.5F + 0.5F, clip.y / clip.w * 0.5F + 0.5F};
+      float u = clip.x / clip.w * 0.5F + 0.5F;
+      float v = clip.y / clip.w * 0.5F + 0.5F;
+      if (!Float.isFinite(u) || !Float.isFinite(v) || u < -1.5F || u > 2.5F || v < -1.5F || v > 2.5F) {
+         return null;
+      }
+      return new float[]{Math.max(-0.5F, Math.min(1.5F, u)), Math.max(-0.5F, Math.min(1.5F, v))};
    }
 }

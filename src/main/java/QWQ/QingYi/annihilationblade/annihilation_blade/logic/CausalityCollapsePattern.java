@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
@@ -20,7 +21,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.entity.PartEntity;
 
 /**
- * SE「因果坍缩·时空裂痕」双端共享的时间轴、智能索敌、引力绞杀阈值与量化坐标工具。
+ * SE「因果坍缩·时空裂痕」双端共享的时间轴、分层智能索敌、抗遮挡落点与量化坐标工具。
  * <p>
  * 仅引用双端通用 Minecraft 数学与坐标类型，禁止引用任何客户端渲染类。
  */
@@ -31,7 +32,7 @@ public final class CausalityCollapsePattern {
    public static final int CLOSE_TICKS = 16;
    /** 单道因果裂痕默认存续总时长（tick，64 tick ≈ 3.2 秒，其中约 2.2 秒满张滞留吸扯绞杀）。 */
    public static final int DEFAULT_SCAR_DURATION = 64;
-   /** 被准星直接锁定开缝的目标在裂痕喉心受压绞杀所需的最小 tick（覆盖 4t 骤裂 + 4t 强压拉丝，确保肉眼看清吸入感）。 */
+   /** 被准星/锁敌直接开缝的目标在裂痕喉心受压绞杀所需的最小 tick（覆盖 4t 骤裂 + 4t 强压拉丝，确保肉眼看清吸入感）。 */
    public static final int DIRECT_CRUSH_TICKS = 8;
    /** 从外围被漩涡吸引进入裂痕喉心的目标，抵达核心后受压绞杀所需 tick（已有拉入位移过程，更利落干脆）。 */
    public static final int PULLED_CRUSH_TICKS = 5;
@@ -39,6 +40,10 @@ public final class CausalityCollapsePattern {
    public static final int DEVOUR_FX_TICKS = 16;
    /** 单道裂痕吞噬目标后自身痉挛脉动过载持续时长（tick）。 */
    public static final int DEVOUR_PULSE_TICKS = 11;
+   /** 空挥“所见即所斩”命中地面/墙面的最大探距（格）。 */
+   public static final double AIR_SURFACE_TRACE_RANGE = 14.0;
+   /** 对着纯天空或超距开阔视野空挥时的默认中景距离（格）。 */
+   public static final double AIR_OPEN_SKY_DISTANCE = 8.5;
 
    private CausalityCollapsePattern() {
    }
@@ -108,13 +113,14 @@ public final class CausalityCollapsePattern {
    }
 
    /**
-    * 独立挥刀索敌与自由空挥解析（按三级优先级回退）：
+    * 独立挥刀三段分层解析：
     * <ol>
-    *   <li><b>原版拔刀剑 Shift 锁敌联动</b>（当 {@code lockOnLinkage} 开启且刀上已通过 Shift 锁定合法生物）：
-    *       无视准星偏角与薄障，在 {@code lockOnRange}（默认 64 格，完整覆盖原版 40 格锁敌）内直接于锁定目标身位正中斩开时空裂痕实现远程狙杀；</li>
-    *   <li><b>自由准星锥角辅助索敌</b>（当未处于 Shift 锁敌且 {@code maxRange > 0} 时）：
-    *       在 {@code maxRange} 与最大允许偏角 {@code maxAngleDeg} 锥体内选取最贴合准星且无实心墙遮挡的目标；</li>
-    *   <li><b>自由空挥回退</b>：回退至准星前方 {@code 6.2} 格空气位置，保留自由挥刀斩开空气的体验。</li>
+    *   <li><b>第 1 层 · 原版拔刀剑 Shift 锁敌（超远距狙杀）</b>：若 {@code lockOnLinkage} 开启且刀上已通过 Shift 锁定合法生物，
+    *       在 {@code lockOnRange}（默认 64 格，覆盖原版 40 格锁敌）内无视偏角与薄障，直接在锁定目标身位正中开缝；</li>
+    *   <li><b>第 2 层 · 免 Shift 准星智能索敌（中近距直觉）</b>：在 {@code maxRange}（默认 24 格）与最大允许偏角
+    *       {@code maxAngleDeg}（默认 13°）锥体内，以 {@code VISUAL} 头/胸/下躯干三点抗遮挡视线校验选出肉眼可见的最优敌对目标；</li>
+    *   <li><b>第 3 层 · 智能空挥落点（所见即所斩）</b>：准星偏离目标或无可见目标时，14 格内命中地面/墙面则按表面外法线贴合落点，
+    *       纯天空/远景则落在 8.5 格舒适中景处。</li>
     * </ol>
     */
    public static AimResolution resolveStandaloneScar(
@@ -128,99 +134,171 @@ public final class CausalityCollapsePattern {
             return targetResolution(locked);
          }
       }
-      return resolveAimOrAirScar(level, player, maxRange, maxAngleDeg, extraFilter);
-   }
-
-   /**
-    * 未启用或未命中 Shift 锁敌时的自由准星锥角索敌与空挥回退解析。
-    */
-   public static AimResolution resolveAimOrAirScar(
-      ServerLevel level, ServerPlayer player, double maxRange, double maxAngleDeg, Predicate<LivingEntity> extraFilter
-   ) {
-      Vec3 eye = player.getEyePosition();
-      Vec3 look = safeDir(player.getLookAngle());
-
-      if (maxRange > 0.5 && maxAngleDeg > 0.5) {
-         double clampedRange = Mth.clamp(maxRange, 1.0, 64.0);
-         double clampedAngleRad = Math.toRadians(Mth.clamp(maxAngleDeg, 2.0, 45.0));
-         double tanMax = Math.tan(clampedAngleRad);
-         double cosMax = Math.cos(clampedAngleRad);
-         // 近距宽容硬底线：防止 0.5 格贴身时把侧方 80° 处的敌人误锁进来
-         double cosHardFloor = Math.cos(Math.toRadians(Math.min(48.0, maxAngleDeg + 18.0)));
-
-         Vec3 farEnd = eye.add(look.scale(clampedRange));
-         double expand = clampedRange * Math.sin(clampedAngleRad) + 2.5;
-         AABB searchBox = new AABB(eye, farEnd).inflate(expand);
-         List<LivingEntity> candidates = level.getEntitiesOfClass(
-            LivingEntity.class,
-            searchBox,
-            entity -> !(entity instanceof Player)
-               && SlashBladeTargeting.canAttack(player, entity)
-               && (extraFilter == null || extraFilter.test(entity))
-         );
-
-         LivingEntity best = null;
-         double bestScore = Double.MAX_VALUE;
-         for (LivingEntity candidate : candidates) {
-            Vec3 center = SpecialEffectSupport.centerOf(candidate);
-            Vec3 toTarget = center.subtract(eye);
-            double distSqr = toTarget.lengthSqr();
-            if (distSqr < 0.12 || distSqr > clampedRange * clampedRange) {
-               continue;
-            }
-            double dist = Math.sqrt(distSqr);
-            double proj = toTarget.dot(look);
-            if (proj <= 0.15) {
-               continue;
-            }
-            double cosAngle = proj / dist;
-            if (cosAngle < cosHardFloor) {
-               continue;
-            }
-            double perpSqr = Math.max(0.0, distSqr - proj * proj);
-            // 允许准星瞄到目标身躯轮廓，同时远距离严格收束在设定锥角内
-            double allowedPerp = proj * tanMax + candidate.getBbWidth() * 0.55 + 0.35;
-            if (perpSqr > allowedPerp * allowedPerp) {
-               continue;
-            }
-            // 视线无实心墙遮挡校验（允许命中实体身前紧邻薄障或略低于目标质心距离 0.45 格内）
-            BlockHitResult clip = level.clip(new ClipContext(eye, center, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
-            if (clip.getType() == HitResult.Type.BLOCK && eye.distanceTo(clip.getLocation()) + 0.45 < dist) {
-               continue;
-            }
-            double angleNorm = Math.max(0.0, 1.0 - cosAngle) / Math.max(1.0E-4, 1.0 - cosMax);
-            double distNorm = dist / clampedRange;
-            double score = angleNorm * 0.72 + distNorm * 0.28;
-            if (score < bestScore) {
-               bestScore = score;
-               best = candidate;
-            }
-         }
-
-         if (best != null) {
-            return targetResolution(best);
-         }
+      LivingEntity aimed = findCrosshairTarget(level, player, maxRange, maxAngleDeg, extraFilter);
+      if (aimed != null) {
+         return targetResolution(aimed);
       }
-
       return new AimResolution(resolveAirScarAnchor(level, player), 2.0F, false, -1);
    }
 
    /**
-    * 独立空挥模式解析单道裂痕锚点：置于玩家准星前方 6.2 格处（兼顾近景震撼与周边地形卷入涡旋）；
-    * 若前方有实心方块遮挡则微退至墙面之前，避免被方块吞没。
+    * 免 Shift 准星锥角智能索敌（含 {@code ClipContext.Block.VISUAL} 头/胸/下躯干三点抗遮挡校验）。
+    * 透过草丛、玻璃、栅栏、半砖或半身矮掩体依然能准确锁定肉眼可见目标，同时严格防止隔实心墙/山体/矿洞穿墙误锁。
+    */
+   @Nullable
+   public static LivingEntity findCrosshairTarget(
+      ServerLevel level, ServerPlayer player, double maxRange, double maxAngleDeg, @Nullable Predicate<LivingEntity> extraFilter
+   ) {
+      if (maxRange <= 0.5 || maxAngleDeg <= 0.5) {
+         return null;
+      }
+      Vec3 eye = player.getEyePosition();
+      Vec3 look = safeDir(player.getLookAngle());
+      double clampedRange = Mth.clamp(maxRange, 1.0, 64.0);
+      double clampedAngleRad = Math.toRadians(Mth.clamp(maxAngleDeg, 2.0, 45.0));
+      double tanMax = Math.tan(clampedAngleRad);
+      double cosMax = Math.cos(clampedAngleRad);
+      // 近距宽容硬底线：防止贴身 0.5 格时把侧面 80° 的目标误吸进锥体
+      double cosHardFloor = Math.cos(Math.toRadians(Math.min(48.0, maxAngleDeg + 18.0)));
+
+      Vec3 farEnd = eye.add(look.scale(clampedRange));
+      double expand = clampedRange * Math.sin(clampedAngleRad) + 2.5;
+      AABB searchBox = new AABB(eye, farEnd).inflate(expand);
+      List<LivingEntity> candidates = level.getEntitiesOfClass(
+         LivingEntity.class,
+         searchBox,
+         entity -> !(entity instanceof Player)
+            && SlashBladeTargeting.canAttack(player, entity)
+            && (extraFilter == null || extraFilter.test(entity))
+      );
+
+      LivingEntity best = null;
+      double bestScore = Double.MAX_VALUE;
+      for (LivingEntity candidate : candidates) {
+         Vec3 center = SpecialEffectSupport.centerOf(candidate);
+         Vec3 toTarget = center.subtract(eye);
+         double distSqr = toTarget.lengthSqr();
+         if (distSqr < 1.0E-4 || distSqr > clampedRange * clampedRange) {
+            continue;
+         }
+         double dist = Math.sqrt(distSqr);
+         double proj = toTarget.dot(look);
+         if (proj <= 0.15) {
+            continue;
+         }
+         double cosAngle = proj / dist;
+         if (cosAngle < cosHardFloor) {
+            continue;
+         }
+         double perpSqr = Math.max(0.0, distSqr - proj * proj);
+         // 计入目标碰撞箱半宽，确保准星擦过敌人肩/躯干轮廓同样跟手
+         double allowedPerp = proj * tanMax + candidate.getBbWidth() * 0.55 + 0.30;
+         if (perpSqr > allowedPerp * allowedPerp) {
+            continue;
+         }
+         if (!hasVisualLineOfSight(level, player, eye, candidate)) {
+            continue;
+         }
+         double angleNorm = Math.max(0.0, 1.0 - cosAngle) / Math.max(1.0E-4, 1.0 - cosMax);
+         double distNorm = dist / clampedRange;
+         double score = angleNorm * 0.72 + distNorm * 0.28;
+         if (score < bestScore) {
+            bestScore = score;
+            best = candidate;
+         }
+      }
+      return best;
+   }
+
+   /**
+    * 三点视觉遮挡检测（胸口 56% → 头部 84% → 下躯干 28%）：
+    * 使用 {@link ClipContext.Block#VISUAL} 跳过草、花与玻璃等视觉透明物，只要任意部位未被实心墙体挡住即视为可见。
+    */
+   private static boolean hasVisualLineOfSight(ServerLevel level, ServerPlayer player, Vec3 eye, LivingEntity target) {
+      double height = Math.max(0.5, target.getBbHeight());
+      double x = target.getX();
+      double y = target.getY();
+      double z = target.getZ();
+      return isPointVisuallyClear(level, player, eye, new Vec3(x, y + height * 0.56, z))
+         || isPointVisuallyClear(level, player, eye, new Vec3(x, y + height * 0.84, z))
+         || isPointVisuallyClear(level, player, eye, new Vec3(x, y + height * 0.28, z));
+   }
+
+   private static boolean isPointVisuallyClear(ServerLevel level, ServerPlayer player, Vec3 eye, Vec3 sample) {
+      BlockHitResult clip = level.clip(new ClipContext(eye, sample, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, player));
+      if (clip.getType() == HitResult.Type.MISS) {
+         return true;
+      }
+      double sampleDist = eye.distanceTo(sample);
+      double hitDist = eye.distanceTo(clip.getLocation());
+      // 目标紧贴墙面/半砖站立时允许 0.35 格贴边误差，但整堵实心墙挡在前方的目标会被严格拒绝
+      return hitDist + 0.35 >= sampleDist;
+   }
+
+   /**
+    * 智能空挥落点解析（“所见即所斩” + 表面外法线防穿模 + 防贴墙埋入）：
+    * <ul>
+    *   <li>沿视线用 {@code COLLIDER} 探测 {@value #AIR_SURFACE_TRACE_RANGE} 格（自动穿透野草花朵）：</li>
+    *   <li>命中地面（{@code UP}）：将裂痕重心抬升至地表上方 ~1.12 格（低矮矿洞自动取地顶中点），下尖轻吻地表不埋地；</li>
+    *   <li>命中墙面/树干/天花板：沿方块表面外法线推出并受 {@code hitDist * 0.45} 钳制，贴墙砍绝不穿入墙背或飞到玩家脑后；
+    *       贴近墙根时自动做底部地面净空微抬；</li>
+    *   <li>纯天空或超距开阔视野：落在视线前方 {@value #AIR_OPEN_SKY_DISTANCE} 格舒适中景位置。</li>
+    * </ul>
     */
    public static Vec3 resolveAirScarAnchor(ServerLevel level, ServerPlayer player) {
       Vec3 eye = player.getEyePosition();
       Vec3 look = safeDir(player.getLookAngle());
-      double focalDist = 6.2;
-      Vec3 far = eye.add(look.scale(focalDist));
-      BlockHitResult hit = level.clip(new ClipContext(eye, far, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
-      if (hit.getType() == HitResult.Type.BLOCK) {
-         double hitDist = eye.distanceTo(hit.getLocation());
-         double pullback = Math.min(1.4, hitDist * 0.28);
-         return eye.add(look.scale(Math.max(2.0, hitDist - pullback)));
+      Vec3 traceEnd = eye.add(look.scale(AIR_SURFACE_TRACE_RANGE));
+      BlockHitResult hit = level.clip(new ClipContext(eye, traceEnd, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+      if (hit.getType() == HitResult.Type.MISS) {
+         return eye.add(look.scale(AIR_OPEN_SKY_DISTANCE));
       }
-      return far;
+
+      Vec3 hitPos = hit.getLocation();
+      double hitDist = eye.distanceTo(hitPos);
+      Direction face = hit.getDirection();
+
+      if (face == Direction.UP) {
+         // 命中地面：检查正上方是否有低矮天花板，避免在 2 格矿洞中把裂痕顶进洞顶
+         double lift = 1.12;
+         Vec3 base = hitPos.add(0.0, 0.05, 0.0);
+         BlockHitResult ceiling = level.clip(new ClipContext(base, base.add(0.0, 1.35, 0.0), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+         if (ceiling.getType() == HitResult.Type.BLOCK) {
+            double gap = Math.max(0.4, ceiling.getLocation().y - hitPos.y);
+            lift = Math.min(lift, gap * 0.5);
+         }
+         return hitPos.add(0.0, lift, 0.0);
+      }
+
+      if (face == Direction.DOWN) {
+         // 命中天花板/悬崖底面：向下沿法线温柔推出，且贴顶时不超过距离的 45%
+         double drop = Math.min(1.05, Math.max(0.22, hitDist * 0.45));
+         return hitPos.add(0.0, -drop, 0.0);
+      }
+
+      // 命中垂直墙面/柱子/树干：沿墙面外法线推出，既保留切墙光刃又不穿模、不反推到玩家脑后
+      Vec3 normal = Vec3.atLowerCornerOf(face.getNormal());
+      double push = Math.min(0.78, Math.max(0.18, hitDist * 0.45));
+      Vec3 anchor = hitPos.add(normal.scale(push));
+      // 1 格宽狭缝保护：若推出路径撞到对面墙体，则自动停在两墙中点
+      Vec3 pushStart = hitPos.add(normal.scale(0.03));
+      BlockHitResult opposite = level.clip(new ClipContext(pushStart, anchor, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+      if (opposite.getType() == HitResult.Type.BLOCK) {
+         anchor = hitPos.lerp(opposite.getLocation(), 0.5);
+      }
+
+      // 若劈在靠近地面的墙根位置，稍微抬高离地避免裂痕下半截埋入地板（同时受头顶净空约束）
+      BlockHitResult floor = level.clip(new ClipContext(anchor, anchor.add(0.0, -0.95, 0.0), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+      if (floor.getType() == HitResult.Type.BLOCK) {
+         double desiredY = floor.getLocation().y + 0.92;
+         if (desiredY > anchor.y) {
+            BlockHitResult ceiling = level.clip(new ClipContext(anchor, new Vec3(anchor.x, desiredY + 0.35, anchor.z), ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+            if (ceiling.getType() == HitResult.Type.MISS) {
+               anchor = new Vec3(anchor.x, desiredY, anchor.z);
+            }
+         }
+      }
+      return anchor;
    }
 
    private static Vec3 safeDir(Vec3 dir) {

@@ -31,11 +31,11 @@ vec3 evalKamuiShell(vec3 rd, vec3 center, float radius, float tHit, float sceneT
     float fresnel = pow(max(1.0 - ndv, 1.0e-4), 2.8);
 
     // 球面三臂对数螺旋旋流
-    float az = atan(n.z, n.x);
+    float az = fxSafeAtan(n.z, n.x);
     float el = asin(clamp(n.y, -1.0, 1.0));
     float spiralA = 0.5 + 0.5 * sin(az * 3.0 + el * 6.5 - FxTime * spinRate);
     float spiralB = 0.5 + 0.5 * sin(az * 5.0 - el * 4.0 + FxTime * spinRate * 0.72);
-    float filaments = pow(spiralA, 5.0) * 0.75 + pow(spiralB, 6.0) * 0.45;
+    float filaments = fxSafePow(spiralA, 5.0) * 0.75 + fxSafePow(spiralB, 6.0) * 0.45;
 
     // 空间畸变球切入方块地形时的锐利品红截交线
     float terrainCut = exp(-max(sceneT - tHit, 0.0) * 3.2);
@@ -75,7 +75,8 @@ vec3 evalKamuiVolume(vec4 pos, vec4 prm, vec3 rd, float sceneT) {
         float dRay = length(center - rd * tc);
         float outsideHole = smoothstep(holeR * 0.82, holeR * 1.02, dRay);
         float ringEdge = exp(-abs(dRay - holeR * 1.08) / max(holeR * 0.24, 0.06));
-        float softAura = exp(-pow(max(dRay - holeR, 0.0) / max(holeR * 1.85, 0.25), 2.0)) * 0.28;
+        float qAura = max(dRay - holeR, 0.0) / max(holeR * 1.85, 0.25);
+        float softAura = exp(-(qAura * qAura)) * 0.28;
 
         // 拧断瞬间沿奇点放射一圈紧凑紫白星芒
         vec3 rightAxis = normalize(cross(abs(rd.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), rd));

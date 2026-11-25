@@ -30,6 +30,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent.Phase;
 import net.minecraftforge.event.TickEvent.PlayerTickEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
@@ -69,6 +70,17 @@ public class PhantomJudgement extends SpecialEffect {
          }
       }
       LAST_TRIGGER.remove(playerId);
+   }
+
+   @SubscribeEvent
+   public static void onServerStopping(ServerStoppingEvent event) {
+      for (List<Sequence> sequences : ACTIVE.values()) {
+         for (Sequence sequence : sequences) {
+            AnnihilationFxEvents.phantomEnd(sequence.fxHandle);
+         }
+      }
+      ACTIVE.clear();
+      LAST_TRIGGER.clear();
    }
 
    /** 判断指定实体当前是否正处于幻影审判星牢锁定中（供因果坍缩微扰定身避让，避免覆盖星牢悬停）。 */
@@ -244,7 +256,8 @@ public class PhantomJudgement extends SpecialEffect {
 
       for (LivingEntity target : targets) {
          if (target.isAlive()) {
-            TerminusLogic.execute(target, player);
+            // 改走带 Boss/玩家保护的静默终焉处决，避免普通生物原版 20t 红尸与万刃斩绝碎裂重影
+            TerminusLogic.executeSilent(target, player);
          }
       }
 

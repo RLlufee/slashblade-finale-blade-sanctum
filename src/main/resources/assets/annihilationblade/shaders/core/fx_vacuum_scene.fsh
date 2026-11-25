@@ -61,7 +61,8 @@ void main() {
     vec2 zuv = projectUv(zc, zw);
     if (Bubble.y > 0.0 && zw > 0.0 && tcZone > 0.0) {
         float dRay = length(zc - rd * tcZone);
-        float ring = exp(-pow((dRay - Bubble.x) / max(Bubble.z, 0.5), 2.0));
+        float qBubble = (dRay - Bubble.x) / max(Bubble.z, 0.5);
+        float ring = exp(-(qBubble * qBubble));
         float frontT = tcZone - sqrt(max(Bubble.x * Bubble.x - dRay * dRay, 0.0));
         vec2 dir = uv - zuv;
         float len = length(dir);
@@ -81,7 +82,8 @@ void main() {
         offset += fxLensOffset(uv, cuv, dCore, Core.w);
     }
     if (Shock.y > 0.0 && coreAhead) {
-        float ring = exp(-pow((dCore - Shock.x) / max(Shock.z, 0.1), 2.0));
+        float qShock = (dCore - Shock.x) / max(Shock.z, 0.1);
+        float ring = exp(-(qShock * qShock));
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dCore * dCore, 0.0));
         vec2 dir = uv - cuv;
         float len = length(dir);
@@ -104,7 +106,7 @@ void main() {
                 cold = cold * cold * 1.35 + cold * 0.15;
                 color = mix(color, cold, 0.75 * field);
                 float wave = fract(length(local.xz) / 22.0 - FxTime * 0.45);
-                float pulse = pow(wave, 10.0);
+                float pulse = fxSafePow(wave, 10.0);
                 color += vec3(0.35, 0.8, 1.0) * (gridMinor * (0.12 + 0.88 * pulse) * 0.45 + gridMajor * 0.5) * field;
             }
         } else {

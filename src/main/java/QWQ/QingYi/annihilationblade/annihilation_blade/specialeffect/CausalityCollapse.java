@@ -6,6 +6,7 @@ import QWQ.QingYi.annihilationblade.annihilation_blade.logic.CausalityCollapsePa
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.WorldRiftChain;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
+import QWQ.QingYi.annihilationblade.common.EntitySuspensionManager;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
@@ -43,9 +44,10 @@ import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
  *   <li><b>神威双模式无缝接管（断空群体联动 + 独立单链）</b>：在神威拧杀吸穿奇点的瞬间跳过闭合回弹，
  *       于每个被斩杀敌人的精确 3D 原位留下一道持久的裂界同源时空裂痕；开启 {@code linkage_devour} 时，
  *       战后残留裂痕同样会持续吸引路过的敌对生物并将其卷入喉心绞杀（单链跳跃期间自动暂缓处决以防断链）；</li>
- *   <li><b>独立挥刀智能索敌 / 自由空挥</b>：平时右键挥刀（未触发断空与单链裂界时）先沿准星锥角做智能索敌，
- *       命中目标则直接将时空裂痕斜劈在目标身位中心；准星偏离太远或前方无目标时平滑回退至前方 6.2 格空气处，
- *       保留自由挥刀斩裂空气的手感，同时所劈出的裂痕本身就是一座持续约 2.6 秒的引力绞杀陷阱。</li>
+ *   <li><b>独立挥刀三段分层索敌 / 智能贴面空挥</b>：平时右键挥刀（未触发断空与单链裂界时）按
+ *       「原版拔刀剑 Shift 锁敌（64 格超远距狙杀）→ 免 Shift 准星三点抗遮挡智能索敌（默认 24 格 / 13°）→
+ *       智能空挥落点（14 格内按表面外法线防穿模贴合地形，纯天空/远景 8.5 格中景）」三段解析落点，
+ *       既跟手又不穿墙，且所劈出的裂痕本身是一座持续约 2.6 秒的引力漩涡绞杀陷阱。</li>
  * </ul>
  */
 @EventBusSubscriber(modid = "annihilationblade")
@@ -56,10 +58,11 @@ public class CausalityCollapse extends SpecialEffect {
    /** 联动群发裂痕间距小于此值时自动合并物理引力场，避免重叠场叠加拉飞生物或重复扫描。 */
    private static final double LINKED_FIELD_MERGE_DIST_SQR = 2.4 * 2.4;
 
+   private static final String SUSPENSION_PREFIX = "causality_collapse:";
    private static final Map<UUID, Long> LAST_STANDALONE_TRIGGER = new HashMap<>();
    private static final List<PendingScarBurst> PENDING_BURSTS = new ArrayList<>();
    private static final List<ActiveVortexScar> ACTIVE_SCARS = new ArrayList<>();
-   private static final Map<UUID, GravityHold> GRAVITY_HOLDS = new HashMap<>();
+   private static long nextScarTokenId = 1L;
 
    public CausalityCollapse() {
       super(0, false, false);
@@ -81,24 +84,33 @@ public class CausalityCollapse extends SpecialEffect {
    // ───────────────────────────── 三路触发入口 ─────────────────────────────
 
    /**
-    * 判断玩家当前是否通过原版拔刀剑 Shift 锁敌锁定了中远程合法目标（距离 > 4.5 格）。
-    * 供 {@code AnnihilationInputRouter} 在确认不可能触发贴脸裂界单链时跳过 2 tick 命中等待，做到远程狙杀 0 帧直出。
+    * 判断玩家当前是否通过原版拔刀剑 Shift 锁敌或免 Shift 准星智能索敌锁定了中远程合法目标（距离 > 4.5 格）。
+    * 供 {@code AnnihilationInputRouter} 在确认近战刀光不可能贴脸命中触发裂界单链时，跳过 2 tick 命中等待做到 0 帧瞬发。
     */
-   public static boolean hasRemoteLockOnTarget(ServerPlayer player, ISlashBladeState state) {
+   public static boolean hasRemoteAimTarget(ServerPlayer player, ISlashBladeState state) {
       if (player == null || state == null || player.level().isClientSide()) {
          return false;
       }
       ModConfig.CausalityCollapse config = ModConfig.COMMON.annihilationBlade.causalityCollapse;
-      if (!config.enabled.getValue() || !config.lockOnLinkage.getValue()) {
+      if (!config.enabled.getValue()) {
          return false;
       }
-      LivingEntity locked = CausalityCollapsePattern.resolveSlashBladeLockOnTarget(
-         player.serverLevel(), player, state, config.lockOnRange.getValue(), CausalityCollapse::isAvailableForRift
-      );
-      if (locked == null) {
+      ServerLevel level = player.serverLevel();
+      LivingEntity target = null;
+      if (config.lockOnLinkage.getValue()) {
+         target = CausalityCollapsePattern.resolveSlashBladeLockOnTarget(
+            level, player, state, config.lockOnRange.getValue(), CausalityCollapse::isAvailableForRift
+         );
+      }
+      if (target == null) {
+         target = CausalityCollapsePattern.findCrosshairTarget(
+            level, player, config.aimLockRange.getValue(), config.aimLockAngle.getValue(), CausalityCollapse::isAvailableForRift
+         );
+      }
+      if (target == null) {
          return false;
       }
-      return SpecialEffectSupport.centerOf(locked).distanceToSqr(player.getEyePosition()) > 4.5 * 4.5;
+      return SpecialEffectSupport.centerOf(target).distanceToSqr(player.getEyePosition()) > 4.5 * 4.5;
    }
 
    /**
@@ -216,7 +228,7 @@ public class CausalityCollapse extends SpecialEffect {
          mode, scarDurationTicks, seed, packedXZ, packedYMeta
       );
 
-      if (suctionRadius > 0.5 && maxSuctionTargets > 0) {
+      if (suctionRadius > 0.0 && maxSuctionTargets > 0) {
          registerVortexScars(
             player, level, specs, count, mode != AnnihilationFxEvents.CAUSALITY_MODE_STANDALONE,
             scarDurationTicks, visualScale, suctionRadius, maxSuctionTargets, devourExecution, directLockedEntityId
@@ -378,7 +390,7 @@ public class CausalityCollapse extends SpecialEffect {
                || !SlashBladeTargeting.canAttack(owner, target)
                || !isAvailableForRift(target)
                || SpecialEffectSupport.centerOf(target).distanceToSqr(scar.center) > releaseDistSqr) {
-            releaseGravityHold(uuid, raw instanceof LivingEntity living ? living : null);
+            releaseGravityHold(scar, uuid, raw instanceof LivingEntity living ? living : null);
             existingIt.remove();
          }
       }
@@ -399,7 +411,7 @@ public class CausalityCollapse extends SpecialEffect {
             boolean bornInCore = candidate.getId() == scar.directLockedEntityId
                || SpecialEffectSupport.centerOf(candidate).distanceTo(scar.center)
                   <= CausalityCollapsePattern.coreCrushRadius(candidate.getBbWidth());
-            acquireGravityHold(candidate);
+            acquireGravityHold(scar, candidate);
             scar.victims.put(uuid, new TrackedVictim(candidate.getId(), bornInCore));
          }
       }
@@ -419,7 +431,7 @@ public class CausalityCollapse extends SpecialEffect {
          TrackedVictim victim = entry.getValue();
          Entity raw = level.getEntity(victim.entityId);
          if (!(raw instanceof LivingEntity target) || !target.isAlive() || !isAvailableForRift(target)) {
-            releaseGravityHold(uuid, raw instanceof LivingEntity living ? living : null);
+            releaseGravityHold(scar, uuid, raw instanceof LivingEntity living ? living : null);
             pullIt.remove();
             continue;
          }
@@ -431,21 +443,26 @@ public class CausalityCollapse extends SpecialEffect {
          Vec3 toScar = scar.center.subtract(targetCenter);
          double dist = toScar.length();
          double coreRadius = CausalityCollapsePattern.coreCrushRadius(target.getBbWidth());
+         boolean highMobilityBoss = TerminusLogic.preservesDeathSequence(target);
+         // 末影龙等高速自主飞行 Boss 放宽包络；普通直锁目标（如幻翼/恶魂等飞怪）亦给予温和喉心宽容防刚开缝即滑脱
+         double effectiveCoreRadius = highMobilityBoss
+            ? Math.max(coreRadius + target.getBbWidth() * 0.45 + 0.85, radius * 0.62)
+            : (target.getId() == scar.directLockedEntityId ? Math.max(coreRadius * 1.35, 2.4) : coreRadius);
 
          applyVortexPull(target, toScar, dist, radius, coreRadius, scar.spinSign);
 
-         if (dist <= coreRadius) {
+         if (dist <= effectiveCoreRadius) {
             victim.coreTicks++;
             int requiredTicks = victim.bornInCore
-               ? CausalityCollapsePattern.DIRECT_CRUSH_TICKS
+               ? (highMobilityBoss ? Math.max(3, CausalityCollapsePattern.DIRECT_CRUSH_TICKS / 2) : CausalityCollapsePattern.DIRECT_CRUSH_TICKS)
                : CausalityCollapsePattern.PULLED_CRUSH_TICKS;
             if (scar.devourExecution && !deferLethalForSingleChain && victim.coreTicks >= requiredTicks) {
                // 先移出并释放重力持锁，延后至 ACTIVE_SCARS 外层迭代完毕后再发包与处决，彻底避免回调改集合引发 CME
-               releaseGravityHold(uuid, target);
+               releaseGravityHold(scar, uuid, target);
                pullIt.remove();
                pendingExecutions.add(new DevourRequest(owner, level, scar.center, target, scar.visualScale));
             }
-         } else if (victim.coreTicks > 0) {
+         } else if (victim.coreTicks > 0 && (!highMobilityBoss || (now & 1L) == 0L)) {
             victim.coreTicks = Math.max(0, victim.coreTicks - 1);
          }
       }
@@ -544,6 +561,9 @@ public class CausalityCollapse extends SpecialEffect {
 
    @SubscribeEvent
    public static void onLivingDeath(LivingDeathEvent event) {
+      if (event.getEntity().level().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof ServerPlayer player) {
          clearPlayer(player.getUUID());
       }
@@ -552,6 +572,9 @@ public class CausalityCollapse extends SpecialEffect {
 
    @SubscribeEvent
    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+      if (event.getLevel().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof LivingEntity target) {
          releaseEntityAcrossAllScars(target);
       }
@@ -564,28 +587,20 @@ public class CausalityCollapse extends SpecialEffect {
       }
       ACTIVE_SCARS.clear();
       PENDING_BURSTS.clear();
-      GRAVITY_HOLDS.clear();
       LAST_STANDALONE_TRIGGER.clear();
    }
 
-   // ───────────────────────────── 无重力引用计数管理（保证全路径无损还原） ─────────────────────────────
+   // ───────────────────────────── 无重力引用计数管理（委托全局 EntitySuspensionManager） ─────────────────────────────
 
-   private static void acquireGravityHold(LivingEntity target) {
-      UUID uuid = target.getUUID();
-      GravityHold hold = GRAVITY_HOLDS.get(uuid);
-      if (hold == null) {
-         hold = new GravityHold(target, target.isNoGravity());
-         GRAVITY_HOLDS.put(uuid, hold);
-      }
-      hold.references++;
-      target.setNoGravity(true);
+   private static void acquireGravityHold(ActiveVortexScar scar, LivingEntity target) {
+      EntitySuspensionManager.acquire(target, scar.suspensionToken, true, false);
    }
 
    private static void releaseAllVictims(ActiveVortexScar scar) {
       for (Map.Entry<UUID, TrackedVictim> entry : scar.victims.entrySet()) {
          Entity raw = scar.level.getEntity(entry.getValue().entityId);
          LivingEntity resolved = raw instanceof LivingEntity living && living.getUUID().equals(entry.getKey()) ? living : null;
-         releaseGravityHold(entry.getKey(), resolved);
+         releaseGravityHold(scar, entry.getKey(), resolved);
       }
       scar.victims.clear();
    }
@@ -594,28 +609,18 @@ public class CausalityCollapse extends SpecialEffect {
       UUID uuid = target.getUUID();
       for (ActiveVortexScar scar : ACTIVE_SCARS) {
          if (scar.victims.remove(uuid) != null) {
-            releaseGravityHold(uuid, target);
+            releaseGravityHold(scar, uuid, target);
          }
       }
    }
 
-   private static void releaseGravityHold(UUID uuid, LivingEntity resolved) {
-      GravityHold hold = GRAVITY_HOLDS.get(uuid);
-      if (hold == null) {
-         return;
-      }
-      hold.references--;
-      if (hold.references > 0) {
-         return;
-      }
-      GRAVITY_HOLDS.remove(uuid);
-      LivingEntity target = resolved != null ? resolved : hold.entity;
-      target.setNoGravity(hold.originalNoGravity);
-      if (target.isAlive() && !target.isRemoved()) {
-         Vec3 vel = target.getDeltaMovement();
-         target.setDeltaMovement(vel.scale(0.45));
-         target.hurtMarked = true;
-         target.hasImpulse = true;
+   private static void releaseGravityHold(ActiveVortexScar scar, UUID uuid, LivingEntity resolved) {
+      EntitySuspensionManager.release(uuid, resolved, scar.suspensionToken);
+      if (resolved != null && resolved.isAlive() && !resolved.isRemoved() && !EntitySuspensionManager.isManaged(uuid)) {
+         Vec3 vel = resolved.getDeltaMovement();
+         resolved.setDeltaMovement(vel.scale(0.45));
+         resolved.hurtMarked = true;
+         resolved.hasImpulse = true;
       }
    }
 
@@ -676,6 +681,7 @@ public class CausalityCollapse extends SpecialEffect {
       final long activateAtGameTime;
       final long expireAtGameTime;
       final int directLockedEntityId;
+      final String suspensionToken;
       final Map<UUID, TrackedVictim> victims = new HashMap<>();
       long lastTickedGameTime = Long.MIN_VALUE;
 
@@ -697,6 +703,7 @@ public class CausalityCollapse extends SpecialEffect {
          this.activateAtGameTime = activateAtGameTime;
          this.expireAtGameTime = expireAtGameTime;
          this.directLockedEntityId = directLockedEntityId;
+         this.suspensionToken = SUSPENSION_PREFIX + ownerId + ":" + (nextScarTokenId++);
       }
    }
 
@@ -708,17 +715,6 @@ public class CausalityCollapse extends SpecialEffect {
       TrackedVictim(int entityId, boolean bornInCore) {
          this.entityId = entityId;
          this.bornInCore = bornInCore;
-      }
-   }
-
-   private static final class GravityHold {
-      final LivingEntity entity;
-      final boolean originalNoGravity;
-      int references;
-
-      GravityHold(LivingEntity entity, boolean originalNoGravity) {
-         this.entity = entity;
-         this.originalNoGravity = originalNoGravity;
       }
    }
 

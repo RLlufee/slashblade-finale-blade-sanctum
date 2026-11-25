@@ -23,7 +23,8 @@ public abstract class LoliBladeEntityMixin {
    private void loliBlockRemove(Entity.RemovalReason reason, CallbackInfo ci) {
       // Mixin 中的 this 是 Mixin 类本身，需先转回目标类型再做 instanceof 判定。
       Entity self = (Entity) (Object) this;
-      if (reason == Entity.RemovalReason.KILLED
+      if (!self.level().isClientSide
+            && reason == Entity.RemovalReason.KILLED
             && self instanceof Player player
             && ModConfig.COMMON.loliBlade.ultimateInvincible.getValue()
             && LoliBladeProtectionManager.isProtected(player.getUUID())) {

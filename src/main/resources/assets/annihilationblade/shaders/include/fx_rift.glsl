@@ -18,7 +18,7 @@ vec4 fxRift(vec3 rd, float sceneT, vec4 rift, vec4 shape, float time) {
     float b = dot(h, v);
     float halfLength = shape.z * (0.35 + 0.65 * rift.w);
     float s = clamp(a / max(halfLength, 1.0e-3), -1.0, 1.0);
-    float profile = pow(max(1.0 - s * s, 0.0), 0.8);
+    float profile = fxSafePow(max(1.0 - s * s, 0.0), 0.8);
     float jag = (fxNoise1(a * 0.35 + time * 0.8) - 0.5) * 0.5 + (fxNoise1(a * 1.3 - time * 1.7) - 0.5) * 0.25;
     float halfWidth = shape.w * rift.w * profile * (1.0 + jag);
     float edge = abs(a) < halfLength ? halfWidth - abs(b) : -(abs(a) - halfLength) - abs(b);

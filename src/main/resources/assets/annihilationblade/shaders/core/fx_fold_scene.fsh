@@ -161,7 +161,7 @@ void applyCausalScar(
     float warpIntensity = clamp(twistMag / 9.2, 0.0, 1.38);
 
     // 极坐标对数螺旋空间拧转 + 动态空气剪切波纹（外缘以 C2 五次函数柔顺收零）
-    float theta = atan(q.y, q.x);
+    float theta = fxSafeAtan(q.y, q.x);
     float logR = log(max(vNorm, 0.02));
     float airShear = sin(theta * 3.0 + logR * 7.6 - FxTime * 11.2 * spinSign);
     float rippleMod = 1.0 + 0.08 * airShear * q5;

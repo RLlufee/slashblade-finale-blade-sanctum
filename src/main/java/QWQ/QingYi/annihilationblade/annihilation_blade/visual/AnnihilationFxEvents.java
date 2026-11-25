@@ -96,17 +96,17 @@ public final class AnnihilationFxEvents {
    public static final int RIFT_LINK_UNLEASH = 4;
 
    /** 裂界神威阶段附加标记位：后方紧跟因果坍缩接管余威裂痕（跳过合缝回弹，直接坍缩成裂痕）。 */
-   public static final int RIFT_FLAG_CAUSALITY_HANDOFF = 1 << 16;
+   public static final int RIFT_FLAG_CAUSALITY_HANDOFF = 1 << 18;
 
-   /** 打包裂界 intParam：bits 0..3 = 阶段种类 | bits 4..9 = 跳序号 | bits 10..15 = 最大链长 | bit 16 = 因果接管标记。 */
+   /** 打包裂界 intParam：bits 0..3 = 阶段种类 | bits 4..10 = 跳序号(0..127) | bits 11..17 = 最大链长(1..127) | bit 18 = 因果接管标记。 */
    public static int packWorldRift(int kind, int hopIndex, int maxChain) {
       return packWorldRift(kind, hopIndex, maxChain, false);
    }
 
    public static int packWorldRift(int kind, int hopIndex, int maxChain, boolean causalityHandoff) {
       int packed = (kind & 0xF)
-         | ((Math.max(0, Math.min(63, hopIndex)) & 0x3F) << 4)
-         | ((Math.max(1, Math.min(63, maxChain)) & 0x3F) << 10);
+         | ((Math.max(0, Math.min(127, hopIndex)) & 0x7F) << 4)
+         | ((Math.max(1, Math.min(127, maxChain)) & 0x7F) << 11);
       return causalityHandoff ? (packed | RIFT_FLAG_CAUSALITY_HANDOFF) : packed;
    }
 
@@ -115,11 +115,11 @@ public final class AnnihilationFxEvents {
    }
 
    public static int worldRiftHop(int packed) {
-      return (packed >> 4) & 0x3F;
+      return (packed >> 4) & 0x7F;
    }
 
    public static int worldRiftMaxChain(int packed) {
-      return Math.max(1, (packed >> 10) & 0x3F);
+      return Math.max(1, (packed >> 11) & 0x7F);
    }
 
    public static boolean worldRiftCausalityHandoff(int packed) {
@@ -265,7 +265,7 @@ public final class AnnihilationFxEvents {
    /** 虚无权域时间轴阶段更新，targetTicks 与 entityIds 按索引一一对应。 */
    public static void voidDominionUpdate(int handle, ServerLevel level, Player player, Vec3 center, double range, double visualScale,
                                          int phase, int[] targetIds, int[] targetTicks, long seed) {
-      FxSustained.update(handle, voidDominionPacket(level, player, center, range, visualScale, phase, targetIds, targetTicks, seed));
+      FxSustained.updateSnapshot(handle, voidDominionPacket(level, player, center, range, visualScale, phase, targetIds, targetTicks, seed));
    }
 
    /** 虚无权域服务端阶段结束，客户端依阶段决定完成收束或异常撤域。 */

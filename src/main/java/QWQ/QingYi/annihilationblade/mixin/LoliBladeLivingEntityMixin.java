@@ -60,7 +60,7 @@ public abstract class LoliBladeLivingEntityMixin {
    private boolean isProtected() {
       // Mixin 中的 this 是 Mixin 类本身，需先转回目标类型再做 instanceof 判定。
       LivingEntity self = (LivingEntity) (Object) this;
-      if (!(self instanceof Player player)) {
+      if (self.level().isClientSide || !(self instanceof Player player)) {
          return false;
       }
       // 配置开关关闭时退化为原事件层防御

@@ -1,9 +1,18 @@
 {
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
   "vertex": "annihilationblade:fx_screen",
   "fragment": "annihilationblade:fx_depth_copy",
-  "attributes": ["Position"],
+  "attributes": [
+    "Position"
+  ],
   "samplers": [
-    { "name": "Sampler0" }
+    {
+      "name": "Sampler0"
+    }
   ],
   "uniforms": []
 }

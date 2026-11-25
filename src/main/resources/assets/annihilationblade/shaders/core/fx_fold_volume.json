@@ -1,22 +1,268 @@
 {
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
   "vertex": "annihilationblade:fx_screen",
   "fragment": "annihilationblade:fx_fold_volume",
-  "attributes": ["Position"],
+  "attributes": [
+    "Position"
+  ],
   "samplers": [
-    { "name": "Sampler1" }
+    {
+      "name": "Sampler1"
+    }
   ],
   "uniforms": [
-    { "name": "InvProj", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0] },
-    { "name": "InvView", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0] },
-    { "name": "FxTime", "type": "float", "count": 1, "values": [0.0] },
-    { "name": "ScarA", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "ScarB", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "ScarC", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "ScarD", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "ScarE", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "ScarF", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "ScarG", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "ScarH", "type": "matrix4x4", "count": 16, "values": [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] },
-    { "name": "Meta", "type": "float", "count": 4, "values": [0.0, 1.0, 0.0, 0.0] }
+    {
+      "name": "InvProj",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "InvView",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "FxTime",
+      "type": "float",
+      "count": 1,
+      "values": [
+        0.0
+      ]
+    },
+    {
+      "name": "ScarA",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ScarB",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ScarC",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ScarD",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ScarE",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ScarF",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ScarG",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "ScarH",
+      "type": "matrix4x4",
+      "count": 16,
+      "values": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Meta",
+      "type": "float",
+      "count": 4,
+      "values": [
+        0.0,
+        1.0,
+        0.0,
+        0.0
+      ]
+    }
   ]
 }

@@ -3,7 +3,9 @@ package QWQ.QingYi.annihilationblade.annihilation_blade;
 import QWQ.QingYi.annihilationblade.registry.ModItems;
 import QWQ.QingYi.annihilationblade.common.NamedBladeStacks;
 import java.util.Map;
+import java.util.Set;
 import javax.annotation.Nullable;
+import mods.flammpfeil.slashblade.client.renderer.CarryType;
 import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -33,6 +35,12 @@ public final class AnnihilationBladeDefinitions {
       "annihilationblade:causality_collapse",
       "annihilationblade:phantom_judgement"
    };
+   /** 已移除的旧版湮灭之刃 SE，刷新旧存档物品时自动清洗，防止 Tooltip 渲染原始键或数据残留。 */
+   private static final Set<String> OBSOLETE_SPECIAL_EFFECTS = Set.of(
+      "annihilationblade:abyssal_decree",
+      "annihilationblade:terminus_mark",
+      "annihilationblade:starless_judgement"
+   );
 
    private AnnihilationBladeDefinitions() {
    }
@@ -57,15 +65,21 @@ public final class AnnihilationBladeDefinitions {
    }
 
    public static void applyStats(ItemStack stack) {
-      applyStats(stack, null);
+      applyStats(stack, null, true);
    }
 
    public static void applyStats(ItemStack stack, @Nullable Level level) {
+      applyStats(stack, level, false);
+   }
+
+   public static void applyStats(ItemStack stack, @Nullable Level level, boolean resetGrowth) {
       if (!applyDatapackStats(stack, level)) {
          applyFallbackStats(stack);
       }
       ensureStats(stack);
-      resetGrowthStats(stack);
+      if (resetGrowth) {
+         resetGrowthStats(stack);
+      }
    }
 
    public static void ensureStats(ItemStack stack) {
@@ -100,6 +114,7 @@ public final class AnnihilationBladeDefinitions {
          CompoundTag tag = stack.getOrCreateTag();
          ensureIdentity(stack);
          tag.putInt("RepairCost", Math.max(1, tag.getInt("RepairCost")));
+         tag.putBoolean("Unbreakable", true);
          tag.putString("SlashArts", "annihilationblade:spatial_fracture");
          tag.putInt("SummonedSwordColor", 11141375);
          applySpecialEffects(stack);
@@ -110,36 +125,90 @@ public final class AnnihilationBladeDefinitions {
             state.setBaseAttackModifier(50.0F);
             state.setMaxDamage(2000);
             state.setDefaultBewitched(true);
+            state.setCarryType(CarryType.NINJA);
             state.setColorCode(11141375);
             state.setSpecialEffects(createSpecialEffects());
             tag.put("bladeState", state.serializeNBT());
          });
          forceHardcodedRender(stack);
          migrateGrowthStats(stack);
-         tag.putInt("HideFlags", 2);
       }
    }
 
    private static void ensureIdentity(ItemStack stack) {
       CompoundTag tag = stack.getOrCreateTag();
-      tag.putBoolean("IsAnnihilationBlade", true);
+      if (!tag.getBoolean("IsAnnihilationBlade")) {
+         tag.putBoolean("IsAnnihilationBlade", true);
+      }
    }
 
    private static void ensureRuntimeStats(ItemStack stack) {
       ensureIdentity(stack);
+      cleanObsoleteSpecialEffects(stack);
       forceHardcodedRender(stack);
       migrateGrowthStats(stack);
    }
 
+   /** 清理旧存档湮灭之刃残留的已删除 SE，仅当确实存在变更时写回 NBT。 */
+   private static void cleanObsoleteSpecialEffects(ItemStack stack) {
+      CompoundTag tag = stack.getTag();
+      if (tag == null) {
+         return;
+      }
+      CompoundTag bladeState = tag.getCompound("bladeState");
+      ListTag specialEffects = bladeState.getList("SpecialEffects", 8);
+      boolean dirty = false;
+      ListTag cleaned = new ListTag();
+      for (int i = 0; i < specialEffects.size(); i++) {
+         String id = specialEffects.getString(i);
+         if (OBSOLETE_SPECIAL_EFFECTS.contains(id)) {
+            dirty = true;
+         } else {
+            cleaned.add(StringTag.valueOf(id));
+         }
+      }
+      if (!dirty) {
+         return;
+      }
+      bladeState.put("SpecialEffects", cleaned);
+      tag.put("bladeState", bladeState);
+      stack.getCapability(ItemSlashBlade.BLADESTATE).ifPresent(state -> {
+         state.setSpecialEffects(cleaned);
+         tag.put("bladeState", state.serializeNBT());
+      });
+   }
+
    private static void forceHardcodedRender(ItemStack stack) {
       CompoundTag tag = stack.getOrCreateTag();
-      tag.putString("ModelName", BLADE_MODEL.toString());
-      tag.putString("TextureName", BLADE_TEXTURE.toString());
+      String modelStr = BLADE_MODEL.toString();
+      String textureStr = BLADE_TEXTURE.toString();
+      boolean tagDirty = false;
+      if (!modelStr.equals(tag.getString("ModelName"))) {
+         tag.putString("ModelName", modelStr);
+         tagDirty = true;
+      }
+      if (!textureStr.equals(tag.getString("TextureName"))) {
+         tag.putString("TextureName", textureStr);
+         tagDirty = true;
+      }
+      if (!tag.getBoolean("Unbreakable")) {
+         tag.putBoolean("Unbreakable", true);
+         tagDirty = true;
+      }
+      boolean needSync = tagDirty;
       stack.getCapability(ItemSlashBlade.BLADESTATE).ifPresent(state -> {
-         state.setModel(BLADE_MODEL);
-         state.setTexture(BLADE_TEXTURE);
-         CompoundTag bladeState = state.serializeNBT();
-         tag.put("bladeState", bladeState);
+         boolean stateDirty = needSync;
+         if (!BLADE_MODEL.equals(state.getModel().orElse(null))) {
+            state.setModel(BLADE_MODEL);
+            stateDirty = true;
+         }
+         if (!BLADE_TEXTURE.equals(state.getTexture().orElse(null))) {
+            state.setTexture(BLADE_TEXTURE);
+            stateDirty = true;
+         }
+         if (stateDirty) {
+            tag.put("bladeState", state.serializeNBT());
+         }
       });
    }
 
@@ -182,13 +251,22 @@ public final class AnnihilationBladeDefinitions {
          }
 
          CompoundTag updatedBladeState = tag.getCompound("bladeState");
-         updatedBladeState.putInt("killCount", state.getKillCount());
-         updatedBladeState.putInt("proudSoul", state.getProudSoulCount());
-         updatedBladeState.putInt("RepairCounter", state.getRefine());
-         tag.put("bladeState", updatedBladeState);
+         int kills = state.getKillCount();
+         int souls = state.getProudSoulCount();
+         int refine = state.getRefine();
+         // 仅在成长值字段与 NBT 不一致或首次迁移时才写回，避免每 20 tick 无意义重写 NBT 触发物品栏同步
+         if (!migrated
+               || updatedBladeState.getInt("killCount") != kills
+               || updatedBladeState.getInt("proudSoul") != souls
+               || updatedBladeState.getInt("RepairCounter") != refine) {
+            updatedBladeState.putInt("killCount", kills);
+            updatedBladeState.putInt("proudSoul", souls);
+            updatedBladeState.putInt("RepairCounter", refine);
+            tag.put("bladeState", updatedBladeState);
+         }
          return true;
       }).orElse(false);
-      if (hasState) {
+      if (hasState && !migrated) {
          removeLegacyGrowthKeys(tag);
          tag.putBoolean("AnnihilationBladeGrowthMigrated", true);
       }

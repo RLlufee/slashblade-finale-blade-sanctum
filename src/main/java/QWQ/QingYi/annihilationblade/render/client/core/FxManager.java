@@ -156,7 +156,8 @@ public final class FxManager {
             FxPipeline.INSTANCE.beginFrame();
          }
       } else if (stage == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
-         if (!ACTIVE.isEmpty() && matricesCaptured && !FxCompat.shadowPass() && FxPipeline.INSTANCE.active() && hasVisible(event.getCamera().getPosition())) {
+         // 光影包启用时 AFTER_WEATHER 仍在光影内部 FBO 中，需跳过此处并延后到 AFTER_LEVEL 再抓取已回写的主深度
+         if (!ACTIVE.isEmpty() && matricesCaptured && !FxCompat.shadowPass() && !FxCompat.shaderPackActive() && FxPipeline.INSTANCE.active() && hasVisible(event.getCamera().getPosition())) {
             FxPipeline.INSTANCE.captureDepth();
          }
       } else if (stage == RenderLevelStageEvent.Stage.AFTER_LEVEL) {

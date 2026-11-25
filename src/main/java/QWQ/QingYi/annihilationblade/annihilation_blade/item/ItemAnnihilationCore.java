@@ -22,15 +22,23 @@ public class ItemAnnihilationCore extends Item {
    @Nonnull
    public InteractionResultHolder<ItemStack> use(@Nonnull Level level, @Nonnull Player player, @Nonnull InteractionHand hand) {
       ItemStack itemStack = player.getItemInHand(hand);
-      if (!level.isClientSide) {
-         ItemStack godSword = getGodBladeFromManager(level);
-         if (!godSword.isEmpty() && player.getInventory().add(godSword)) {
-            itemStack.shrink(1);
-            return InteractionResultHolder.success(itemStack);
-         }
+      if (level.isClientSide) {
+         return InteractionResultHolder.sidedSuccess(itemStack, true);
       }
-
-      return InteractionResultHolder.fail(itemStack);
+      ItemStack godSword = getGodBladeFromManager(level);
+      if (godSword.isEmpty()) {
+         return InteractionResultHolder.fail(itemStack);
+      }
+      // 核心默认不可堆叠：直接替换当前手持槽位，彻底解决满背包时核心占最后一格导致唤醒失败的问题
+      if (itemStack.getCount() <= 1) {
+         player.setItemInHand(hand, godSword);
+         return InteractionResultHolder.consume(godSword);
+      }
+      itemStack.shrink(1);
+      if (!player.getInventory().add(godSword)) {
+         player.drop(godSword, false);
+      }
+      return InteractionResultHolder.consume(itemStack);
    }
 
    public void appendHoverText(@Nonnull ItemStack stack, @Nullable Level level, @Nonnull List<Component> tooltip, @Nonnull TooltipFlag flag) {

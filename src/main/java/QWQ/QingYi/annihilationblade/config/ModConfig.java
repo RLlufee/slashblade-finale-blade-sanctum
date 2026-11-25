@@ -164,6 +164,8 @@ public final class ModConfig {
    public static final class SpatialFracture extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
       public final DoubleEntry maxDistance;
       public final DoubleEntry fractureRadius;
+      /** 历史兼容占位项，当前版本已由解析锁定替代、不再读取。 */
+      @Deprecated
       public final DoubleEntry rayStep;
       public final DoubleEntry raySampleRadius;
       public final DoubleEntry entityLockRadius;
@@ -171,6 +173,8 @@ public final class ModConfig {
       public final IntegerEntry maxTargets;
       public final IntegerEntry maxVisualizedTargets;
       public final IntegerEntry fractureSlashes;
+      /** 历史兼容占位项，当前版本已由专属渲染器替代、不再读取。 */
+      @Deprecated
       public final IntegerEntry centerSlashes;
       public final DoubleEntry visualScale;
 
@@ -178,14 +182,14 @@ public final class ModConfig {
          super("annihilation_blade.spatial_fracture", "config.annihilationblade.annihilation_blade.spatial_fracture.title");
          this.maxDistance = doubleValue("max_distance", 160.0, 32.0, 256.0, "最大施法距离，建议 64-192。", "Maximum cast distance. Suggested: 64-192.");
          this.fractureRadius = doubleValue("fracture_radius", 20.0, 4.0, 64.0, "空间破碎主判定半径，建议 12-32。", "Main Spatial Fracture target radius. Suggested: 12-32.");
-         this.rayStep = doubleValue("ray_step", 4.0, 1.0, 12.0, "沿视线补充扫描步长，越小越密，建议 2-6。", "Backup ray scan step; lower means denser scan. Suggested: 2-6.");
+         this.rayStep = doubleValue("ray_step", 4.0, 1.0, 12.0, "【历史兼容保留，当前版本未使用】原沿视线补充扫描步长。", "[Legacy compatibility placeholder; unused in current version] Former ray scan step.");
          this.raySampleRadius = doubleValue("ray_sample_radius", 5.0, 1.0, 16.0, "沿视线每个采样点的扫描半径，建议 3-8。", "Backup ray sample radius. Suggested: 3-8.");
          this.entityLockRadius = doubleValue("entity_lock_radius", 3.0, 0.5, 10.0, "准星锁定实体的宽容半径，建议 2-5。", "Aim lock tolerance around entities. Suggested: 2-5.");
          this.backupRadius = doubleValue("backup_radius", 48.0, 8.0, 96.0, "没有命中目标时的备用搜索半径，建议 24-64。", "Fallback search radius when no target is found. Suggested: 24-64.");
          this.maxTargets = intValue("max_targets", 128, 1, 256, "最大影响目标数，建议 32-160。", "Maximum affected targets. Suggested: 32-160.");
          this.maxVisualizedTargets = intValue("max_visualized_targets", 32, 0, 128, "最多播放单体斩击视觉的目标数，建议 16-48。", "Targets with individual slash visuals. Suggested: 16-48.");
-         this.fractureSlashes = intValue("fracture_slashes", 24, 0, 96, "裂隙风暴斩击线数量，建议 12-36。", "Fracture storm visual slash count. Suggested: 12-36.");
-         this.centerSlashes = intValue("center_slashes", 12, 0, 48, "中心 SlashBlade 斩击数量，建议 6-18。", "Center SlashBlade slash count. Suggested: 6-18.");
+         this.fractureSlashes = intValue("fracture_slashes", 24, 0, 96, "裂隙风暴斩击线数量（设为 0 可关闭），建议 12-36。", "Fracture storm visual slash count (0 disables). Suggested: 12-36.");
+         this.centerSlashes = intValue("center_slashes", 12, 0, 48, "【历史兼容保留，当前版本未使用】原中心 SlashBlade 斩击数量。", "[Legacy compatibility placeholder; unused in current version] Former center SlashBlade slash count.");
          this.visualScale = visualScale(1.0);
       }
    }
@@ -268,7 +272,7 @@ public final class ModConfig {
          this.enabled = seEnabled("void_dominion");
          this.range = doubleValue("range", 26.0, 4.0, 64.0, "虚无权域半径，建议 16-36。", "Void Dominion radius. Suggested: 16-36.");
          this.maxTargets = intValue("max_targets", 64, 1, 160, "虚无权域最多影响目标数，建议 32-96。", "Maximum Void Dominion targets. Suggested: 32-96.");
-         this.cooldownTicks = intValue("cooldown_ticks", 70, 0, 200, "触发冷却 tick，建议 50-100。", "Trigger cooldown in ticks. Suggested: 50-100.");
+         this.cooldownTicks = intValue("cooldown_ticks", 70, 0, 200, "触发冷却 tick（权域展开期间自动防重叠，提前中断时仍按此冷却生效），建议 50-120。", "Trigger cooldown in ticks (overlap is blocked while active; still enforced if interrupted early). Suggested: 50-120.");
          this.chordWindowTicks = intValue(
             "chord_window_ticks", 2, 0, 6,
             "左键+右键同时按下判定缓冲窗口（tick，20 tick = 1 秒），用于防止略微错帧按下时误先触发断空或幻影审判。建议 2-3。",
@@ -306,14 +310,14 @@ public final class ModConfig {
             "Maximum remote snipe range in blocks when linked with vanilla SlashBlade Shift lock-on (covers vanilla 40-block lock-on). Suggested: 48-80."
          );
          this.aimLockRange = doubleValue(
-            "aim_lock_range", 0.0, 0.0, 48.0,
-            "未按 Shift 锁敌时的自由准星辅助索敌距离（格；默认 0 以便未锁定时自由砍空气玩，设为 >0 如 20 则开启免 Shift 准星自动索敌）。",
-            "Free crosshair auto-lock distance in blocks when not using Shift lock-on (default 0 for pure air-slash play; set e.g. 20 to enable)."
+            "aim_lock_range",32.0, 0.0, 128.0,
+            "免 Shift 准星智能索敌最大距离（格；默认 24 格覆盖中近距可见敌人且自动避开实心墙体，设为 0 则仅 Shift 锁敌才索敌），建议 16-28。",
+            "Free crosshair smart lock-on range in blocks without holding Shift (default 24 blocks with 3-point visual LOS; 0 for Shift lock-on only). Suggested: 16-28."
          );
          this.aimLockAngle = doubleValue(
-            "aim_lock_angle", 14.0, 3.0, 35.0,
-            "免 Shift 准星辅助索敌允许的最大偏角（度；仅在 aim_lock_range > 0 时生效），建议 10-18。",
-            "Maximum crosshair deviation angle in degrees for free auto-lock (only used when aim_lock_range > 0). Suggested: 10-18."
+            "aim_lock_angle", 13.0, 3.0, 35.0,
+            "免 Shift 准星智能索敌允许的最大偏角（度；准星偏离目标超过此角度即自由砍空气/地形），建议 10-16。",
+            "Maximum crosshair deviation angle in degrees for free smart lock-on (aiming further away falls back to air/surface slash). Suggested: 10-16."
          );
          this.suctionRadius = doubleValue(
             "suction_radius", 6.0, 0.0, 16.0,
@@ -379,7 +383,11 @@ public final class ModConfig {
    public static final class Domain extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
       public final IntegerEntry durationTicks;
       public final DoubleEntry radius;
+      /** 历史兼容占位项，当前版本已由专属渲染器替代、不再读取。 */
+      @Deprecated
       public final IntegerEntry borderIntervalTicks;
+      /** 历史兼容占位项，当前版本已由专属渲染器替代、不再读取。 */
+      @Deprecated
       public final IntegerEntry playerAuraIntervalTicks;
       public final IntegerEntry pulseIntervalTicks;
       public final DoubleEntry visualScale;
@@ -388,8 +396,8 @@ public final class ModConfig {
          super("blood_prison.domain", "config.annihilationblade.blood_prison.domain.title");
          this.durationTicks = intValue("duration_ticks", 400, 40, 1200, "血狱领域持续 tick，20 tick=1秒，建议 200-600。", "Blood Prison domain duration in ticks. Suggested: 200-600.");
          this.radius = doubleValue("radius", 10.0, 3.0, 32.0, "血狱领域半径，建议 8-14。", "Blood Prison domain radius. Suggested: 8-14.");
-         this.borderIntervalTicks = intValue("border_interval_ticks", 10, 2, 40, "领域边界粒子刷新间隔，建议 8-16。", "Domain border particle interval. Suggested: 8-16.");
-         this.playerAuraIntervalTicks = intValue("player_aura_interval_ticks", 4, 1, 40, "领域内玩家血气粒子间隔，建议 4-10。", "Player aura particle interval inside domain. Suggested: 4-10.");
+         this.borderIntervalTicks = intValue("border_interval_ticks", 10, 2, 40, "【历史兼容保留，当前版本未使用】原领域边界粒子刷新间隔。", "[Legacy compatibility placeholder; unused in current version] Former domain border particle interval.");
+         this.playerAuraIntervalTicks = intValue("player_aura_interval_ticks", 4, 1, 40, "【历史兼容保留，当前版本未使用】原领域内玩家血气粒子间隔。", "[Legacy compatibility placeholder; unused in current version] Former player aura particle interval.");
          this.pulseIntervalTicks = intValue("pulse_interval_ticks", 20, 4, 80, "领域脉冲视觉间隔，建议 16-30。", "Domain pulse visual interval. Suggested: 16-30.");
          this.visualScale = visualScale(1.0);
       }

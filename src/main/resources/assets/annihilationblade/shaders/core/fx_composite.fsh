@@ -27,6 +27,7 @@ uniform vec2 Center;
 uniform vec4 Vignette;
 uniform float Desaturate;
 uniform vec2 ImpactFrame; // x = 冲击帧强度, y = 是否反相 (>0.5)
+uniform float PostMode;   // 0 = 单 Pass 完整直出, 1 = 仅执行单次 HDR 预合成输出至离屏缓存, 2 = 对预合成单纹理执行模糊/色差与收尾后处理
 
 in vec2 texCoord;
 
@@ -35,28 +36,30 @@ out vec4 fragColor;
 // 采样单点的合成色彩（场景 + 本体暗部层 + 线性 HDR 发光），保证模糊/色差对背景与特效同步生效。
 vec3 sampleComposite(vec2 uv) {
     vec2 suv = clamp(uv, vec2(0.0005), vec2(0.9995));
-    vec3 base = texture(Sampler0, suv).rgb;
+    vec3 base = fxSanitize(texture(Sampler0, suv).rgb);
     if (BodyWeight > 0.5) {
         vec4 body = texture(Sampler4, suv);
+        body.rgb = fxSanitize(body.rgb);
+        float bodyA = (isnan(body.a) || isinf(body.a)) ? 0.0 : clamp(body.a, 0.0, 1.0);
         // 预乘 Alpha 合成：先压暗/遮盖背景，再叠加本体可见色彩
-        base = base * clamp(1.0 - body.a, 0.0, 1.0) + body.rgb;
+        base = base * (1.0 - bodyA) + body.rgb;
     }
 
-    vec3 glow = texture(Sampler1, suv).rgb;
+    vec3 glow = fxSanitize(texture(Sampler1, suv).rgb);
     if (VolumeWeight > 0.5) {
-        glow += texture(Sampler2, suv).rgb * VolumeWeight;
+        glow += fxSanitize(texture(Sampler2, suv).rgb) * VolumeWeight;
     }
     if (BloomStrength > 0.001) {
-        glow += texture(Sampler3, suv).rgb * BloomStrength * 0.22;
+        glow += fxSanitize(texture(Sampler3, suv).rgb) * BloomStrength * 0.22;
     }
-    glow = max(glow, vec3(0.0));
+    glow = max(fxSanitize(glow), vec3(0.0));
     float glowPeak = max(max(glow.r, glow.g), glow.b);
     if (glowPeak <= 1.0e-5) {
         return clamp(base, vec3(0.0), vec3(1.0));
     }
 
     // 在近似线性空间进行物理能量叠加，再通过高光自然去饱和曲线平滑过渡到白热核心
-    vec3 baseLin = pow(clamp(base, vec3(0.0), vec3(1.0)), vec3(2.2));
+    vec3 baseLin = pow(max(clamp(base, vec3(0.0), vec3(1.0)), vec3(1.0e-5)), vec3(2.2));
     // 高能量段按亮度平滑向白热收拢，避免纯通道 exp 导致紫/青偏色
     float luma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
     float desat = 1.0 - exp(-max(luma - 0.85, 0.0) * 0.32);
@@ -70,13 +73,34 @@ vec3 sampleComposite(vec2 uv) {
     vec3 outLin = mix(baseLin, compressed, blendMask);
     // 保留高能核心微弱的线性白热冲顶，拉出刀光/爆发的锋利对比
     outLin += max(shapedGlow - 1.6, vec3(0.0)) * 0.035;
-    return pow(clamp(outLin, vec3(0.0), vec3(1.0)), vec3(1.0 / 2.2));
+    return pow(max(clamp(outLin, vec3(0.0), vec3(1.0)), vec3(1.0e-5)), vec3(1.0 / 2.2));
+}
+
+// 后处理采样入口：两阶段模式（PostMode == 2）直接读取单张预合成纹理，避免多 tap 模糊/色差重复采样 5 张层与重复 HDR 映射。
+vec3 samplePostSource(vec2 uv) {
+    if (PostMode > 1.5) {
+        vec2 suv = clamp(uv, vec2(0.0005), vec2(0.9995));
+        return fxSanitize(texture(Sampler0, suv).rgb);
+    }
+    return sampleComposite(uv);
 }
 
 void main() {
     vec2 uv = texCoord;
+    if (PostMode > 0.5 && PostMode < 1.5) {
+        // 阶段一：仅做一次 5 纹理 HDR 线性空间预合成，写回闲置场景目标供后续多 tap 模糊/色差复用
+        fragColor = vec4(fxSanitize(sampleComposite(uv)), 1.0);
+        return;
+    }
+
     float aspect = OutSize.x / max(OutSize.y, 1.0);
-    vec2 fromCenter = uv - Center;
+    // 对屏幕焦点与径向偏移限幅，防止焦点擦过近平面时整屏拉丝与色差撕裂
+    vec2 safeCenter = clamp(Center, vec2(-0.4), vec2(1.4));
+    vec2 fromCenter = uv - safeCenter;
+    float fcLen = length(fromCenter);
+    if (fcLen > 1.4) {
+        fromCenter *= 1.4 / fcLen;
+    }
     float radialDist = length(fromCenter * vec2(aspect, 1.0));
 
     vec3 color;
@@ -86,12 +110,12 @@ void main() {
         for (int i = 0; i < 10; i++) {
             float k = float(i) / 9.0;
             float w = 1.0 - k * 0.55;
-            sum += sampleComposite(uv - fromCenter * ZoomBlur * 0.11 * k) * w;
+            sum += samplePostSource(uv - fromCenter * ZoomBlur * 0.11 * k) * w;
             weight += w;
         }
         color = sum / weight;
     } else {
-        color = sampleComposite(uv);
+        color = samplePostSource(uv);
     }
 
     // 边缘向心速度线模糊：中心区域保持锐利清晰，四周产生高速突进/斩裂拉丝与轻微压暗
@@ -106,7 +130,7 @@ void main() {
             for (int i = 1; i <= 7; i++) {
                 float k = float(i) / 7.0;
                 float w = mix(0.16, 0.04, k);
-                dashSum += sampleComposite(uv + inward * span * k * (1.0 + k * 1.6)) * w;
+                dashSum += samplePostSource(uv + inward * span * k * (1.0 + k * 1.6)) * w;
                 wSum += w;
             }
             color = mix(color, dashSum / wSum, clamp(edgePower * 0.85, 0.0, 1.0));
@@ -121,9 +145,9 @@ void main() {
     if (totalAb > 0.001) {
         vec2 shift = fromCenter * totalAb * 0.011;
         vec3 shifted;
-        shifted.r = sampleComposite(uv + shift * 1.05).r;
+        shifted.r = samplePostSource(uv + shift * 1.05).r;
         shifted.g = color.g;
-        shifted.b = sampleComposite(uv - shift * 0.92).b;
+        shifted.b = samplePostSource(uv - shift * 0.92).b;
         color = mix(color, shifted, clamp(totalAb * 0.85, 0.0, 1.0));
     }
 
@@ -162,5 +186,5 @@ void main() {
         color = mix(color, mono, ImpactFrame.x);
     }
 
-    fragColor = vec4(fxDither8(color, gl_FragCoord.xy), 1.0);
+    fragColor = vec4(fxDither8(fxSanitize(color), gl_FragCoord.xy), 1.0);
 }

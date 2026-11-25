@@ -3,6 +3,7 @@ package QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.TerminusLogic;
 import QWQ.QingYi.annihilationblade.annihilation_blade.logic.VoidDominionPattern;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
+import QWQ.QingYi.annihilationblade.common.EntitySuspensionManager;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
@@ -37,9 +38,9 @@ import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 /** 虚无权域的服务端权威时间轴与逐目标处决调度。 */
 @EventBusSubscriber(modid = "annihilationblade")
 public class VoidDominion extends SpecialEffect {
+   private static final String SUSPENSION_PREFIX = "void_dominion:";
    private static final Map<UUID, Long> LAST_TRIGGER = new HashMap<>();
    private static final Map<UUID, DominionSequence> ACTIVE = new HashMap<>();
-   private static final Map<UUID, TargetSuspension> SUSPENSIONS = new HashMap<>();
 
    public VoidDominion() {
       super(0, false, false);
@@ -58,6 +59,9 @@ public class VoidDominion extends SpecialEffect {
 
    @SubscribeEvent
    public static void onPlayerDeath(LivingDeathEvent event) {
+      if (event.getEntity().level().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof ServerPlayer player) {
          clearPlayer(player.getUUID());
       }
@@ -66,6 +70,9 @@ public class VoidDominion extends SpecialEffect {
 
    @SubscribeEvent
    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+      if (event.getLevel().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof LivingEntity target) {
          releaseSuspension(target);
       }
@@ -79,11 +86,10 @@ public class VoidDominion extends SpecialEffect {
       }
       ACTIVE.clear();
       LAST_TRIGGER.clear();
-      SUSPENSIONS.clear();
    }
 
    public static boolean isEntitySuspended(UUID entityUuid) {
-      return SUSPENSIONS.containsKey(entityUuid);
+      return EntitySuspensionManager.isHeldByPrefix(entityUuid, SUSPENSION_PREFIX);
    }
 
    /** 判断当前玩家与持刀状态是否具备触发「虚无权域」左+右并发组合技的资格（已挂载、开启、未在激活与冷却中）。 */
@@ -99,8 +105,9 @@ public class VoidDominion extends SpecialEffect {
          return false;
       }
       long gameTime = player.level().getGameTime();
-      int cooldown = Math.max(config.cooldownTicks.getValue(), VoidDominionPattern.TOTAL_LIFETIME);
-      long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -cooldown * 2L);
+      // 权域运行期间已由 ACTIVE.containsKey 防止重叠，此处直接尊重用户配置的 cooldownTicks
+      int cooldown = Math.max(0, config.cooldownTicks.getValue());
+      long last = LAST_TRIGGER.getOrDefault(player.getUUID(), -cooldown * 2L - 1L);
       return gameTime - last >= cooldown;
    }
 
@@ -147,6 +154,7 @@ public class VoidDominion extends SpecialEffect {
          return;
       }
 
+      List<PendingExecution> pendingExecutions = new ArrayList<>();
       Iterator<Map.Entry<UUID, DominionSequence>> iterator = ACTIVE.entrySet().iterator();
       while (iterator.hasNext()) {
          DominionSequence sequence = iterator.next().getValue();
@@ -180,7 +188,7 @@ public class VoidDominion extends SpecialEffect {
                refreshSchedule(sequence);
                sendUpdate(sequence, AnnihilationFxEvents.VOID_PHASE_SWEEP);
             }
-            executeArrived(sequence, age);
+            executeArrived(sequence, age, pendingExecutions);
          }
          if (age == VoidDominionPattern.COLLAPSE_TICK) {
             List<TargetPlan> remaining = new ArrayList<>(sequence.targets);
@@ -194,14 +202,22 @@ public class VoidDominion extends SpecialEffect {
             for (TargetPlan plan : remaining) {
                LivingEntity target = resolveTarget(sequence, plan);
                if (target != null && SlashBladeTargeting.canAttack(player, target)) {
-                  release(plan, target);
-                  TerminusLogic.execute(target, player);
+                  release(sequence, plan, target);
+                  pendingExecutions.add(new PendingExecution(player, target));
                }
             }
             sequence.releaseTargets();
             sequence.targets.clear();
          }
          sequence.age++;
+      }
+
+      // 延后至外层 ACTIVE 迭代结束后统一处决，避免 PVP 互杀时 LivingDeathEvent 修改 ACTIVE 引发 CME
+      for (PendingExecution execution : pendingExecutions) {
+         if (execution.target.isAlive() && !execution.target.isRemoved()
+               && SlashBladeTargeting.canAttack(execution.player, execution.target)) {
+            TerminusLogic.executeSilent(execution.target, execution.player);
+         }
       }
    }
 
@@ -243,14 +259,7 @@ public class VoidDominion extends SpecialEffect {
             continue;
          }
          if (!plan.suspended) {
-            TargetSuspension suspension = SUSPENSIONS.get(plan.uuid);
-            if (suspension == null) {
-               suspension = new TargetSuspension(
-                  target, target.isNoGravity(), target instanceof Mob mob && mob.isNoAi(), target.getDeltaMovement()
-               );
-               SUSPENSIONS.put(plan.uuid, suspension);
-            }
-            suspension.references++;
+            EntitySuspensionManager.acquire(target, sequence.suspensionToken, true, true);
             plan.suspended = true;
          }
          Vec3 velocity = target.getDeltaMovement();
@@ -264,7 +273,7 @@ public class VoidDominion extends SpecialEffect {
       }
    }
 
-   private static void executeArrived(DominionSequence sequence, int age) {
+   private static void executeArrived(DominionSequence sequence, int age, List<PendingExecution> pendingExecutions) {
       List<TargetPlan> arrived = new ArrayList<>();
       sequence.targets.removeIf(plan -> {
          if (plan.eraseTick > age) {
@@ -281,13 +290,14 @@ public class VoidDominion extends SpecialEffect {
       for (TargetPlan plan : arrived) {
          Entity entity = sequence.level.getEntity(plan.entityId);
          LivingEntity target = entity instanceof LivingEntity living && living.getUUID().equals(plan.uuid) ? living : null;
-         release(plan, target);
-         if (target != null) {
-            if (SlashBladeTargeting.canAttack(sequence.player, target)) {
-               TerminusLogic.execute(target, sequence.player);
-            }
+         release(sequence, plan, target);
+         if (target != null && SlashBladeTargeting.canAttack(sequence.player, target)) {
+            pendingExecutions.add(new PendingExecution(sequence.player, target));
          }
       }
+   }
+
+   private record PendingExecution(ServerPlayer player, LivingEntity target) {
    }
 
    private static void pruneUnavailable(DominionSequence sequence) {
@@ -299,32 +309,17 @@ public class VoidDominion extends SpecialEffect {
          }
          Entity entity = sequence.level.getEntity(plan.entityId);
          LivingEntity target = entity instanceof LivingEntity living && living.getUUID().equals(plan.uuid) ? living : null;
-         release(plan, target);
+         release(sequence, plan, target);
          iterator.remove();
       }
    }
 
-   private static void release(TargetPlan plan, LivingEntity target) {
+   private static void release(DominionSequence sequence, TargetPlan plan, LivingEntity target) {
       if (!plan.suspended) {
          return;
       }
       plan.suspended = false;
-      TargetSuspension suspension = SUSPENSIONS.get(plan.uuid);
-      if (suspension == null) {
-         return;
-      }
-      suspension.references--;
-      if (suspension.references > 0) {
-         return;
-      }
-      SUSPENSIONS.remove(plan.uuid);
-      LivingEntity restoreTarget = target != null ? target : suspension.entity;
-      restoreTarget.setNoGravity(suspension.originalNoGravity);
-      restoreTarget.setDeltaMovement(suspension.originalVelocity);
-      restoreTarget.hasImpulse = true;
-      if (restoreTarget instanceof Mob mob) {
-         mob.setNoAi(suspension.originalNoAi);
-      }
+      EntitySuspensionManager.release(plan.uuid, target, sequence.suspensionToken);
    }
 
    private static void releaseSuspension(LivingEntity target) {
@@ -335,7 +330,7 @@ public class VoidDominion extends SpecialEffect {
          while (iterator.hasNext()) {
             TargetPlan plan = iterator.next();
             if (plan.uuid.equals(targetId)) {
-               release(plan, target);
+               release(sequence, plan, target);
                iterator.remove();
                removed = true;
             }
@@ -388,6 +383,7 @@ public class VoidDominion extends SpecialEffect {
       final double scale;
       final long seed;
       final List<TargetPlan> targets;
+      final String suspensionToken;
       int age;
 
       DominionSequence(ServerPlayer player, ServerLevel level, int handle, Vec3 center, double radius, double scale, long seed, List<TargetPlan> targets) {
@@ -399,15 +395,16 @@ public class VoidDominion extends SpecialEffect {
          this.scale = scale;
          this.seed = seed;
          this.targets = targets;
+         this.suspensionToken = SUSPENSION_PREFIX + player.getUUID() + ":" + handle;
       }
 
       void releaseTargets() {
          for (TargetPlan plan : this.targets) {
             Entity entity = this.level.getEntity(plan.entityId);
             if (entity instanceof LivingEntity target && target.getUUID().equals(plan.uuid)) {
-               release(plan, target);
+               release(this, plan, target);
             } else {
-               release(plan, null);
+               release(this, plan, null);
             }
          }
       }
@@ -423,21 +420,6 @@ public class VoidDominion extends SpecialEffect {
          this.entityId = entityId;
          this.uuid = uuid;
          this.eraseTick = eraseTick;
-      }
-   }
-
-   private static final class TargetSuspension {
-      final LivingEntity entity;
-      final boolean originalNoGravity;
-      final boolean originalNoAi;
-      final Vec3 originalVelocity;
-      int references;
-
-      TargetSuspension(LivingEntity entity, boolean originalNoGravity, boolean originalNoAi, Vec3 originalVelocity) {
-         this.entity = entity;
-         this.originalNoGravity = originalNoGravity;
-         this.originalNoAi = originalNoAi;
-         this.originalVelocity = originalVelocity;
       }
    }
 }

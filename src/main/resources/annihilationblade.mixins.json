@@ -7,6 +7,8 @@
   "mixins": [
     "LivingEntityMixin",
     "LoliBladeLivingEntityMixin",
+    "LoliBladePlayerMixin",
+    "LoliBladeServerPlayerMixin",
     "LoliBladeEntityMixin"
   ],
   "client": [],

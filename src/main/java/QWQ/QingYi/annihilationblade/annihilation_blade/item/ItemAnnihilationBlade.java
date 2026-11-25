@@ -24,7 +24,8 @@ public class ItemAnnihilationBlade extends ItemSlashBlade {
 
    public void inventoryTick(ItemStack stack, Level level, Entity entity, int slotId, boolean isSelected) {
       super.inventoryTick(stack, level, entity, slotId, isSelected);
-      if (!level.isClientSide && entity.tickCount % 20 == 0) {
+      // 玩家背包中的周期校准已由 ModEventHandler 统一处理（带脏检查）；此处仅兜底非玩家实体持有场景
+      if (!level.isClientSide && !(entity instanceof net.minecraft.world.entity.player.Player) && entity.tickCount % 20 == 0) {
          AnnihilationBladeDefinitions.ensureStats(stack, level);
       }
    }

@@ -15,12 +15,26 @@ import net.minecraftforge.api.distmarker.OnlyIn;
  */
 @OnlyIn(Dist.CLIENT)
 public abstract class FxInstance {
+   private static int pendingInitialAge;
+
    protected int age;
    protected int lifetime;
    private int handle = -1;
 
    protected FxInstance(int lifetime) {
+      this.age = Math.max(0, pendingInitialAge);
+      pendingInitialAge = 0;
       this.lifetime = Math.max(1, lifetime);
+   }
+
+   /** 供调度器在构造持续特效实例前预设初始 elapsed 年龄，确保子类构造阶段读到的 {@code this.age} 与服务端对齐。 */
+   public static void setPendingInitialAge(int initialAge) {
+      pendingInitialAge = Math.max(0, initialAge);
+   }
+
+   /** 清理未消费的预设初始年龄（例如工厂抛异常或返回 null 时在 finally 调用）。 */
+   public static void clearPendingInitialAge() {
+      pendingInitialAge = 0;
    }
 
    // ───────────── 持续特效（FxSustainPacket）钩子 ─────────────

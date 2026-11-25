@@ -132,22 +132,21 @@ public final class AnnihilationInputRouter {
       boolean bothOld = oldLeft && oldRight;
       boolean bothNow = curLeft && curRight;
 
-      // 1. 左键 + 右键同时成立上升沿：最高优先级触发「虚无权域」，并吞掉同一窗口内的单键缓冲
+      // 1. 左键 + 右键同时成立上升沿：最高优先级尝试触发「虚无权域」；
+      //    仅当虚无权域真实触发成功时才吞掉同一窗口内的单键缓冲，避免冷却期或无目标时误吞幻影审判/断空/因果坍缩。
       if (bothNow && !bothOld) {
          if (Dankong.isActive(player)) {
             return;
          }
-         input.clearPending();
-         if (bladeState.hasSpecialEffect(ModSpecialEffects.VOID_DOMINION.getId())
-               && ModConfig.COMMON.annihilationBlade.voidDominion.enabled.getValue()) {
+         if (VoidDominion.canAcceptChord(player, bladeState) && VoidDominion.tryTriggerFromChord(player, bladeState)) {
+            input.clearPending();
             input.chordConsumedUntilTick = now + Math.max(2, chordWindow);
-            VoidDominion.tryTriggerFromChord(player, bladeState);
+            return;
          }
-         return;
       }
 
-      // 2. 纯左键按下沿（当前未按住右键）：触发「幻影审判」，虚无权域就绪时延迟 chordWindow 等待是否凑成双键
-      if (!oldLeft && curLeft && !curRight) {
+      // 2. 左键按下沿：未凑成有效虚无权域时触发「幻影审判」，虚无权域就绪时延迟 chordWindow 等待是否凑成双键
+      if (!oldLeft && curLeft && (!curRight || !VoidDominion.canAcceptChord(player, bladeState))) {
          if (now <= input.chordConsumedUntilTick || Dankong.isActive(player)) {
             return;
          }
@@ -155,8 +154,11 @@ public final class AnnihilationInputRouter {
                || !ModConfig.COMMON.annihilationBlade.phantomJudgement.enabled.getValue()) {
             return;
          }
-         if (chordWindow > 0 && VoidDominion.canAcceptChord(player, bladeState)) {
-            input.pendingLeftExpireTick = now + chordWindow;
+         if (!curRight && chordWindow > 0 && VoidDominion.canAcceptChord(player, bladeState)) {
+            // 高频连点时不反复往后重置到期时间，防止“点越快越出不了招”
+            if (input.pendingLeftExpireTick < 0L) {
+               input.pendingLeftExpireTick = now + chordWindow;
+            }
          } else {
             PhantomJudgement.tryTriggerFromInput(player);
          }
@@ -187,27 +189,35 @@ public final class AnnihilationInputRouter {
       }
 
       int chordWindow = Math.max(0, ModConfig.COMMON.annihilationBlade.voidDominion.chordWindowTicks.getValue());
-      // 若虚无权域当前已就绪：先挂起 2 tick，防止右键早按 1~2 帧导致断空或因果坍缩抢跑
+      boolean needsRiftHitWait = hasCausality
+         && state.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId())
+         && Dankong.isDisabledFor(player, state)
+         && WorldRiftChain.isStandaloneReady(player, now)
+         && !CausalityCollapse.hasRemoteAimTarget(player, state);
+
+      // 若虚无权域当前已就绪：先挂起等待是否凑成双键（同时兼顾裂界单链 2 tick 命中等待，避免 chordWindow=1 时空挥抢跑）
       if (chordWindow > 0 && VoidDominion.canAcceptChord(player, state)) {
-         // 若在同 tick 内双键已同时处于按下态，则直接走虚无权域而不必再挂起
-         if (input.leftDown && input.rightDown) {
+         // 若在同 tick 内双键已同时处于按下态，先尝试触发虚无权域；仅触发成功才吞掉本次挥刀
+         if (input.leftDown && input.rightDown && VoidDominion.tryTriggerFromChord(player, state)) {
             input.clearPending();
             input.chordConsumedUntilTick = now + Math.max(2, chordWindow);
-            VoidDominion.tryTriggerFromChord(player, state);
             return;
          }
-         input.pendingSlashExpireTick = now + chordWindow;
+         int waitTicks = needsRiftHitWait ? Math.max(chordWindow, 2) : chordWindow;
+         if (input.pendingSlashExpireTick < 0L) {
+            input.pendingSlashExpireTick = now + waitTicks;
+         } else if (needsRiftHitWait) {
+            input.pendingSlashExpireTick = Math.max(input.pendingSlashExpireTick, now + 2L);
+         }
          return;
       }
 
       // 若断空当前关闭且裂界单链就绪：挂起 2 tick 等待本次挥刀是否命中敌人，避免贴脸命中瞬间抢先在准星前空挥出一道多余裂痕；
-      // 若已通过原版 Shift 锁定中远程目标（> 4.5 格，近战刀光不可能命中），则免等待 0 帧瞬发远程狙杀。
-      if (hasCausality
-            && state.hasSpecialEffect(ModSpecialEffects.WORLD_RIFT.getId())
-            && Dankong.isDisabledFor(player, state)
-            && WorldRiftChain.isStandaloneReady(player, now)
-            && !CausalityCollapse.hasRemoteLockOnTarget(player, state)) {
-         input.pendingSlashExpireTick = now + 2L;
+      // 若已通过 Shift 锁敌或免 Shift 准星智能索敌锁定中远程目标（> 4.5 格，近战刀光不可能命中），则免等待 0 帧瞬发。
+      if (needsRiftHitWait) {
+         if (input.pendingSlashExpireTick < 0L) {
+            input.pendingSlashExpireTick = now + 2L;
+         }
          return;
       }
 

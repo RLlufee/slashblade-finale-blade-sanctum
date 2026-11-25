@@ -72,8 +72,10 @@ void main() {
 
     // 核心闪光（裂界与湮灭瞬间：锐利亮芯 + 深紫青星云外晕，避免大面积洗白）
     if (Extra.x > 0.0 && tc > 0.0 && tc - radius * 0.2 < sceneT) {
-        float sharpCore = exp(-pow(dRay / max(radius * 0.16, 0.25), 2.0));
-        float chromaHalo = exp(-pow(dRay / max(radius * 0.38, 0.5), 2.0));
+        float qCore = dRay / max(radius * 0.16, 0.25);
+        float qHalo = dRay / max(radius * 0.38, 0.5);
+        float sharpCore = exp(-(qCore * qCore));
+        float chromaHalo = exp(-(qHalo * qHalo));
         acc += (vec3(1.0, 0.94, 1.0) * sharpCore * 2.4 + vec3(0.58, 0.36, 1.0) * chromaHalo * 0.85) * Extra.x;
     }
 
@@ -91,8 +93,10 @@ void main() {
     if (Shock.y > 0.0 && tc > 0.0) {
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dRay * dRay, 0.0));
         if (frontT < sceneT) {
-            float wave1 = exp(-pow((dRay - Shock.x) / max(Shock.z, 0.1), 2.0));
-            float wave2 = exp(-pow((dRay - Shock.x * 0.84) / max(Shock.z * 1.45, 0.15), 2.0));
+            float q1 = (dRay - Shock.x) / max(Shock.z, 0.1);
+            float q2 = (dRay - Shock.x * 0.84) / max(Shock.z * 1.45, 0.15);
+            float wave1 = exp(-(q1 * q1));
+            float wave2 = exp(-(q2 * q2));
             float turb = 0.72 + 0.28 * fxNoise3(rd * 11.0 + vec3(FxTime * 1.8, -FxTime * 1.3, seed));
             vec3 leadCol = mix(vec3(1.0, 0.84, 0.48), vec3(0.95, 0.98, 1.0), wave1 * 0.65);
             vec3 trailCol = mix(vec3(0.64, 0.26, 1.0), vec3(0.32, 0.88, 1.0), turb);

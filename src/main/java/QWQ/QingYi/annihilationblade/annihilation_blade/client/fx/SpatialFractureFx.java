@@ -192,7 +192,10 @@ public final class SpatialFractureFx extends FxInstance {
    }
 
    private void buildSlashes(int count) {
-      int total = Math.min(44, Math.max(14, count));
+      if (count <= 0) {
+         return;
+      }
+      int total = Math.min(96, count);
       for (int i = 0; i < total; i++) {
          Vector3f direction = FxMath.randomUnit(this.random);
          Vector3f offset = FxMath.randomUnit(this.random).mul((float)(this.random.nextDouble() * this.radius * 0.56));

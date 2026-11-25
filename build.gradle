@@ -157,6 +157,9 @@ dependencies {
     // keep it as a normal dependency so ForgeGradle does not look for a nonexistent
     // Modrinth "mapped_official_1.20.1" classifier.
     implementation("maven.modrinth:XbiLGMMU:2YdOW2Dk")
+
+    // Mixin 注解处理器：在 compileJava 阶段生成 annihilationblade.refmap.json 并由 reobfJar 打入正式包
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

@@ -4,8 +4,8 @@ import QWQ.QingYi.annihilationblade.Annihilationblade;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.EntityModel;
@@ -16,6 +16,7 @@ import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.player.PlayerRenderer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.api.distmarker.Dist;
@@ -30,10 +31,12 @@ import net.minecraftforge.api.distmarker.OnlyIn;
  */
 @OnlyIn(Dist.CLIENT)
 final class AfterimageCapture {
-   /** 单个残影最多截取的面数（原版玩家模型含外层皮肤约 72 个面）。 */
-   private static final int MAX_QUADS = 384;
-   private static final Set<EntityType<?>> FAILED_TYPES = new HashSet<>();
-   private static boolean failed;
+   /** 单个残影最多截取的面数（扩至 768 以兼容高模模组生物）。 */
+   private static final int MAX_QUADS = 768;
+   private static final int MAX_CONSECUTIVE_FAILURES = 4;
+   private static final Map<EntityType<?>, Integer> TYPE_FAILURE_COUNTS = new HashMap<>();
+   private static int playerFailureCount;
+   private static boolean playerFailureLogged;
 
    private AfterimageCapture() {
    }
@@ -45,15 +48,21 @@ final class AfterimageCapture {
     */
    @Nullable
    static float[] capture(AbstractClientPlayer player, float bodyYaw, float headPitch, float attackTime) {
-      if (failed) {
+      if (playerFailureCount >= MAX_CONSECUTIVE_FAILURES) {
          return null;
       }
       EntityRenderer<? super AbstractClientPlayer> renderer = Minecraft.getInstance().getEntityRenderDispatcher().getRenderer(player);
       if (!(renderer instanceof PlayerRenderer playerRenderer)) {
          return null;
       }
+      PlayerModel<AbstractClientPlayer> model = playerRenderer.getModel();
+      boolean prevYoung = model.young;
+      boolean prevRiding = model.riding;
+      boolean prevCrouching = model.crouching;
+      float prevAttackTime = model.attackTime;
+      HumanoidModel.ArmPose prevRightArm = model.rightArmPose;
+      HumanoidModel.ArmPose prevLeftArm = model.leftArmPose;
       try {
-         PlayerModel<AbstractClientPlayer> model = playerRenderer.getModel();
          PoseStack pose = new PoseStack();
          // 与 LivingEntityRenderer / PlayerRenderer 的模型变换一致
          pose.mulPose(Axis.YP.rotationDegrees(180.0F - bodyYaw));
@@ -61,6 +70,8 @@ final class AfterimageCapture {
          pose.scale(0.9375F, 0.9375F, 0.9375F);
          pose.translate(0.0F, -1.501F, 0.0F);
 
+         // 确保全部肢体可见，防止旁观模式或第三方模组隐藏部件后残影只剩悬浮人头
+         model.setAllVisible(true);
          model.young = false;
          model.riding = false;
          model.crouching = false;
@@ -72,12 +83,23 @@ final class AfterimageCapture {
 
          Collector collector = new Collector();
          model.renderToBuffer(pose, collector, 0xF000F0, OverlayTexture.NO_OVERLAY, 1.0F, 1.0F, 1.0F, 1.0F);
-         return collector.quads();
+         playerFailureCount = 0;
+         float[] quads = collector.quads();
+         return quads.length == 0 ? null : quads;
       } catch (RuntimeException exception) {
-         // 第三方模组替换了玩家模型等情况：只记录一次，此后残影改为不绘制，不影响断空其余表现
-         failed = true;
-         Annihilationblade.LOGGER.warn("[AnnihilationBlade FX] Afterimage capture disabled: {}", exception.toString());
+         playerFailureCount++;
+         if (!playerFailureLogged) {
+            playerFailureLogged = true;
+            Annihilationblade.LOGGER.warn("[AnnihilationBlade FX] Afterimage capture error (count={}): {}", playerFailureCount, exception.toString());
+         }
          return null;
+      } finally {
+         model.young = prevYoung;
+         model.riding = prevRiding;
+         model.crouching = prevCrouching;
+         model.attackTime = prevAttackTime;
+         model.rightArmPose = prevRightArm;
+         model.leftArmPose = prevLeftArm;
       }
    }
 
@@ -85,20 +107,27 @@ final class AfterimageCapture {
     * 截取任意生物当前姿势的模型（断空「剪影斩断」用），坐标以生物脚底为原点。
     * <p>
     * 只支持使用 {@link LivingEntityRenderer} 的生物；渲染器自带的额外缩放（史莱姆、巨人等）不在模型里，
-    * 因此截取后按碰撞箱高度重新归一化。某种生物截取失败后，此后跳过该类型。
+    * 因此截取后按碰撞箱高度重新归一化。某种生物连续截取失败达阈值后跳过该类型。
     */
    @Nullable
    @SuppressWarnings("unchecked")
    static float[] captureLiving(LivingEntity entity) {
-      if (FAILED_TYPES.contains(entity.getType())) {
+      if (TYPE_FAILURE_COUNTS.getOrDefault(entity.getType(), 0) >= MAX_CONSECUTIVE_FAILURES) {
          return null;
       }
       EntityRenderer<? super LivingEntity> renderer = Minecraft.getInstance().getEntityRenderDispatcher().getRenderer(entity);
       if (!(renderer instanceof LivingEntityRenderer<?, ?> living)) {
          return null;
       }
+      EntityModel<LivingEntity> model = (EntityModel<LivingEntity>)living.getModel();
+      boolean prevYoung = model.young;
+      boolean prevRiding = model.riding;
+      float prevAttackTime = model.attackTime;
+      HumanoidModel<?> humanoid = model instanceof HumanoidModel<?> h ? h : null;
+      boolean prevCrouching = humanoid != null && humanoid.crouching;
+      HumanoidModel.ArmPose prevRightArm = humanoid != null ? humanoid.rightArmPose : null;
+      HumanoidModel.ArmPose prevLeftArm = humanoid != null ? humanoid.leftArmPose : null;
       try {
-         EntityModel<LivingEntity> model = (EntityModel<LivingEntity>)living.getModel();
          PoseStack pose = new PoseStack();
          pose.mulPose(Axis.YP.rotationDegrees(180.0F - entity.yBodyRot));
          pose.scale(-1.0F, -1.0F, 1.0F);
@@ -108,16 +137,33 @@ final class AfterimageCapture {
          model.young = entity.isBaby();
          model.riding = false;
          model.attackTime = entity.getAttackAnim(1.0F);
+         if (humanoid != null) {
+            humanoid.setAllVisible(true);
+            humanoid.crouching = entity.isCrouching();
+            humanoid.rightArmPose = HumanoidModel.ArmPose.EMPTY;
+            humanoid.leftArmPose = HumanoidModel.ArmPose.EMPTY;
+         }
+         float headYaw = Mth.wrapDegrees(entity.yHeadRot - entity.yBodyRot);
          model.prepareMobModel(entity, limbPosition, limbSpeed, 1.0F);
-         model.setupAnim(entity, limbPosition, limbSpeed, entity.tickCount, entity.yHeadRot - entity.yBodyRot, entity.getXRot());
+         model.setupAnim(entity, limbPosition, limbSpeed, entity.tickCount, headYaw, entity.getXRot());
          Collector collector = new Collector();
          model.renderToBuffer(pose, collector, 0xF000F0, OverlayTexture.NO_OVERLAY, 1.0F, 1.0F, 1.0F, 1.0F);
+         TYPE_FAILURE_COUNTS.remove(entity.getType());
          float[] quads = collector.quads();
          return quads.length == 0 ? null : fitHeight(quads, entity.getBbHeight());
       } catch (RuntimeException exception) {
-         FAILED_TYPES.add(entity.getType());
+         TYPE_FAILURE_COUNTS.merge(entity.getType(), 1, Integer::sum);
          Annihilationblade.LOGGER.debug("[AnnihilationBlade FX] Silhouette capture skipped for {}: {}", entity.getType(), exception.toString());
          return null;
+      } finally {
+         model.young = prevYoung;
+         model.riding = prevRiding;
+         model.attackTime = prevAttackTime;
+         if (humanoid != null) {
+            humanoid.crouching = prevCrouching;
+            humanoid.rightArmPose = prevRightArm;
+            humanoid.leftArmPose = prevLeftArm;
+         }
       }
    }
 

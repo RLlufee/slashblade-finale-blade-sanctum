@@ -87,6 +87,12 @@ vec2 sampleFlowOffset(vec2 uv, float speed) {
     return v1 * 0.085 + v2 * 0.055;
 }
 
+// 安全视线单位向量：避免片元与相机重合时 normalize(vec3(0.0)) 产生 NaN。
+vec3 safeViewDir(vec3 relPos) {
+    float len = length(relPos);
+    return len > 1.0e-4 ? (-relPos / len) : vec3(0.0, 0.0, -1.0);
+}
+
 vec2 rotate2(vec2 v, float a) {
     float c = cos(a);
     float s = sin(a);
@@ -100,7 +106,7 @@ float aaLine(float distance, float width, float aa) {
 float sdSegment(vec2 p, vec2 a, vec2 b) {
     vec2 pa = p - a;
     vec2 ba = b - a;
-    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1.0e-6), 0.0, 1.0);
     return length(pa - ba * h);
 }
 
@@ -133,7 +139,7 @@ float sdStar5(vec2 p, float r, float rf) {
 
 // 正 N 边形边界距离（外接圆半径 r），通过极坐标折叠到单个扇区。
 float sdPolygon(vec2 p, float r, float n, float phase) {
-    float a = atan(p.y, p.x) + phase;
+    float a = fxSafeAtan(p.y, p.x) + phase;
     float sector = FX_TAU / n;
     float local = mod(a + sector * 0.5, sector) - sector * 0.5;
     float apothem = r * cos(FX_PI / n);
@@ -156,10 +162,8 @@ float runeGlyph(vec2 local, float h, float aa) {
         float ha = fxHash11(h * 91.7 + float(i) * 13.1);
         float hb = fxHash11(h * 37.3 + float(i) * 7.9 + 1.0);
         int ia = int(ha * 8.999);
-        int ib = int(hb * 8.999);
-        if (ia == ib) {
-            ib = 8 - ia;
-        }
+        // 严格保证 ib != ia（避免原 ia == 4 && ib == 4 时 8 - ia 仍等于 4 导致除零 NaN）
+        int ib = (ia + 1 + int(hb * 7.999)) % 9;
         float d = sdSegment(local, grid[ia], grid[ib]);
         strokes = max(strokes, aaLine(d, 0.16, aa * 6.0));
     }
@@ -219,7 +223,7 @@ vec4 styleRune(vec2 uv) {
     float seed = FxParams.y;
     float grand = step(0.5, FxParams.z);
     float reveal = FxParams.w;
-    float baseAngle = atan(uv.y, uv.x);
+    float baseAngle = fxSafeAtan(uv.y, uv.x);
 
     float lines = 0.0;
     float detail = 0.0;
@@ -290,7 +294,7 @@ vec4 styleRing(vec2 uv) {
     float d = abs(r - FxParams.x);
     float ring = exp(-(d * d) / (width * width)) + 0.35 * exp(-d / (width * 4.0));
     if (FxParams.z > 0.0) {
-        float a = (atan(uv.y, uv.x) + FX_PI) / FX_TAU;
+        float a = (fxSafeAtan(uv.y, uv.x) + FX_PI) / FX_TAU;
         float f = fract(a * FxParams.z + FxTime * FxParams.w);
         float dash = smoothstep(0.0, 0.08, f) * (1.0 - smoothstep(0.55, 0.63, f));
         ring *= mix(0.2, 1.0, dash);
@@ -306,9 +310,9 @@ vec4 styleBeam(vec2 uv) {
     float n2 = fxNoise3(vec3(uv.x * FxParams.x * 2.3 - flow * 1.7 + 7.0, uv.y * 4.0, 4.3));
     float turbulence = n1 * 0.65 + n2 * 0.35;
     float radial = clamp(y + (turbulence - 0.5) * 0.45 * FxParams.z, 0.0, 1.0);
-    float core = pow(1.0 - radial, 6.0);
-    float hot = pow(1.0 - radial, 16.0);
-    float shell = pow(1.0 - radial, 1.6) * smoothstep(0.3, 0.8, turbulence);
+    float core = fxSafePow(1.0 - radial, 6.0);
+    float hot = fxSafePow(1.0 - radial, 16.0);
+    float shell = fxSafePow(1.0 - radial, 1.6) * smoothstep(0.3, 0.8, turbulence);
     float rim = exp(-abs(radial - 0.7) * 12.0) * FxParams.w;
     float edge = 1.0 - smoothstep(0.86, 1.0, y);
     float intensity = (core * 0.9 + shell * 0.6 + rim * 0.5) * edge;
@@ -327,10 +331,10 @@ vec4 styleCurtain(vec2 uv) {
     float seed = FxParams.x;
     float bands = fxNoise3(vec3(x * 18.0, h * 1.5 - FxTime * 0.6, seed));
     float bands2 = fxNoise3(vec3(x * 47.0 + 3.0, h * 3.0 - FxTime * 1.1, seed + 5.0));
-    float streak = pow(bands * 0.6 + bands2 * 0.4, 3.0) * 2.2;
+    float streak = fxSafePow(bands * 0.6 + bands2 * 0.4, 3.0) * 2.2;
     float base = exp(-h * 5.0) * 1.2;
     float crest = exp(-abs(h - rise) * 30.0) * 0.8 * step(rise, 0.995);
-    float scan = pow(0.5 + 0.5 * sin(h * 120.0 - FxTime * 8.0), 18.0) * 0.35 * FxParams.y;
+    float scan = fxSafePow(0.5 + 0.5 * sin(h * 120.0 - FxTime * 8.0), 18.0) * 0.35 * FxParams.y;
     float gx = abs(fract(x * 16.0) - 0.5);
     float vline = (1.0 - smoothstep(0.02, 0.02 + gCurtainWidth * 1.5, gx)) * 0.25 * FxParams.y;
     float ends = 1.0 - smoothstep(0.96, 1.0, abs(x));
@@ -349,8 +353,8 @@ vec4 styleDisk(vec2 uv) {
     vec2 q = rotate2(uv, FxTime * FxParams.y / max(r, 0.15));
     float bands = 0.55 + 0.45 * fxNoise3(vec3(q * 7.0, r * 12.0 + FxParams.z));
     float fine = fxNoise3(vec3(q * 21.0, r * 30.0 + FxParams.z));
-    float profile = smoothstep(inner * 0.9, inner * 1.15, r) * pow(1.0 - smoothstep(inner, 1.0, r), 1.5);
-    float doppler = 1.0 + FxParams.w * sin(atan(uv.y, uv.x));
+    float profile = smoothstep(inner * 0.9, inner * 1.15, r) * fxSafePow(1.0 - smoothstep(inner, 1.0, r), 1.5);
+    float doppler = 1.0 + FxParams.w * sin(fxSafeAtan(uv.y, uv.x));
     float hot = exp(-(r - inner) * 14.0);
     vec3 inside = vec3(1.0, 0.85, 0.6);
     vec3 tint = mix(inside, vertexColor.rgb, smoothstep(inner, 0.8, r));
@@ -363,10 +367,10 @@ vec4 styleDisk(vec2 uv) {
 // params: x = 鳞片/丝线密度, y = 龟裂比例 0..1, z = 闪烁相位, w = 边缘光强度。
 vec4 styleShield(vec2 uv) {
     vec3 normal = surfaceNormal();
-    vec3 viewDir = normalize(-relativePos);
+    vec3 viewDir = safeViewDir(relativePos);
     float ndv = clamp(abs(dot(normal, viewDir)), 0.0, 1.0);
-    float rim = pow(1.0 - ndv, 1.75);
-    float hardRim = pow(1.0 - ndv, 4.8);
+    float rim = fxSafePow(1.0 - ndv, 1.75);
+    float hardRim = fxSafePow(1.0 - ndv, 4.8);
 
     float rows = max(FxParams.x, 4.0);
     vec2 flow = sampleFlowOffset(vec2(uv.x * 2.0, uv.y * 1.5), 0.18);
@@ -413,7 +417,7 @@ vec4 styleSprite(vec2 uv) {
         d = sdHeart(uv * 0.95 + vec2(0.0, 0.5)) / 0.95;
     } else if (shape < 1.5) {
         vec2 a = abs(uv);
-        d = (pow(a.x, 0.5) + pow(a.y, 0.5)) - 0.75;
+        d = (sqrt(a.x) + sqrt(a.y)) - 0.75;
     } else {
         d = sdStar5(uv * 1.05, 0.8, 0.45) / 1.05;
     }
@@ -429,11 +433,11 @@ vec4 styleSprite(vec2 uv) {
 // params: x = 纹理缩放, y = 流动速度（>0 向下灌注，<0 向上喷射）, z = 坍缩/消散进度(0..1), w = 波前位置(0..1)
 vec4 stylePlasmaBeam(vec2 uv) {
     vec3 normal = gFaceNormal;
-    vec3 viewDir = normalize(-relativePos);
+    vec3 viewDir = safeViewDir(relativePos);
     float ndv = clamp(abs(dot(normal, viewDir)), 0.0, 1.0);
     // 圆柱侧面在掠射角柔和淡出，消除硬几何边界感
     float softEdge = smoothstep(0.05, 0.48, ndv);
-    float rim = pow(1.0 - ndv, 2.2) * softEdge;
+    float rim = fxSafePow(1.0 - ndv, 2.2) * softEdge;
 
     float scale = max(floor(FxParams.x + 0.5), 1.0);
     float speed = FxParams.y;
@@ -454,9 +458,10 @@ vec4 stylePlasmaBeam(vec2 uv) {
     float streakB = smoothstep(0.76, 1.0, 0.5 + 0.5 * sin(uv.y * 13.0 * scale + t * 5.2 - (uv.x - offset.y) * FX_TAU * 2.0));
     float streaks = (streakA + streakB * 0.72 + smokeRidge * 0.95) * (1.0 - smokeGroove * 0.55);
 
-    float waveFront = exp(-pow((uv.y - wavePos) * 5.5, 2.0));
+    float qWave = (uv.y - wavePos) * 5.5;
+    float waveFront = exp(-(qWave * qWave));
     float endFade = smoothstep(0.0, 0.06, uv.y) * (1.0 - smoothstep(0.92, 1.0, uv.y));
-    float collapseFade = pow(1.0 - collapse, 1.3 + (1.0 - uv.y) * 0.4);
+    float collapseFade = fxSafePow(1.0 - collapse, 1.3 + (1.0 - uv.y) * 0.4);
 
     if (FxBlendMode > 0.5) {
         // 本体暗烟壳：保留深色暗沟实体感，把光柱的「厚度与威压」立起来
@@ -467,7 +472,7 @@ vec4 stylePlasmaBeam(vec2 uv) {
     }
 
     float energy = (0.18 + streaks * 0.62 + rim * 0.48 + waveFront * 0.55) * softEdge * endFade * collapseFade;
-    float whiteHot = clamp(pow(ndv, 2.4) * 0.45 + waveFront * 0.35 + smokeRidge * 0.25, 0.0, 1.0);
+    float whiteHot = clamp(fxSafePow(ndv, 2.4) * 0.45 + waveFront * 0.35 + smokeRidge * 0.25, 0.0, 1.0);
     vec3 col = mix(vertexColor.rgb, vec3(1.0, 0.96, 0.90), whiteHot * 0.65) * energy;
     col *= 1.0 - smokeGroove * 0.32;
     return vec4(col, clamp(energy, 0.0, 1.0));
@@ -478,9 +483,9 @@ vec4 stylePlasmaBeam(vec2 uv) {
 // params: x = 前端聚焦锐度, y = 噪声密度, z = 流动速度, w = 激波环脉动(0..1)
 vec4 styleReentry(vec2 uv) {
     vec3 normal = surfaceNormal();
-    vec3 viewDir = normalize(-relativePos);
+    vec3 viewDir = safeViewDir(relativePos);
     float ndv = clamp(abs(dot(normal, viewDir)), 0.0, 1.0);
-    float rim = pow(1.0 - ndv, 1.55);
+    float rim = fxSafePow(1.0 - ndv, 1.55);
 
     float front = clamp(1.0 - uv.y, 0.0, 1.0);
     float frontPower = max(FxParams.x, 0.4);
@@ -495,11 +500,12 @@ vec4 styleReentry(vec2 uv) {
     float sharp = texture(Sampler1, fract(vec2(uv.x * 9.0 * nScale, uv.y * 5.2 * nScale - t * 1.75))).g;
 
     float turb = coarse * 0.46 + tongues * 0.36 + sharp * 0.18;
-    float frontMask = pow(front, frontPower);
+    float frontMask = fxSafePow(front, frontPower);
     float tailFade = smoothstep(0.0, 0.32, front);
     float lick = smoothstep(0.32, 0.88, turb + front * 0.28 + rim * 0.16);
-    float shockRing = exp(-pow((front - (0.76 + pulse * 0.08)) * 12.0, 2.0));
-    float noseHot = pow(front, 3.0) * (0.72 + turb * 0.48);
+    float qShock = (front - (0.76 + pulse * 0.08)) * 12.0;
+    float shockRing = exp(-(qShock * qShock));
+    float noseHot = front * front * front * (0.72 + turb * 0.48);
 
     if (FxBlendMode > 0.5) {
         // 本体焦灼暗焰层：给流星/恒星壳体压出高对比暗紫/深绯底层
@@ -543,7 +549,8 @@ vec4 styleSlashArc(vec2 uv) {
     float bladeBody = outerCut * innerFade * tipFade;
 
     float sharpness = max(FxParams.x, 2.0);
-    float edgeLine = exp(-pow(abs(uv.y - 0.84) * sharpness, 2.0)) * tipFade;
+    float qEdge = abs(uv.y - 0.84) * sharpness;
+    float edgeLine = exp(-(qEdge * qEdge)) * tipFade;
     float streak = smoothstep(0.45, 0.92, n2.g) * bladeBody * (0.4 + 0.6 * along);
 
     if (FxBlendMode > 0.5) {
@@ -563,7 +570,7 @@ vec4 styleSlashArc(vec2 uv) {
 // params: x = 扩散进度(0..1), y = 速度, z = 边缘撕裂强度, w = 喉部亮核强度
 vec4 styleShockCone(vec2 uv) {
     vec3 normal = gFaceNormal;
-    vec3 viewDir = normalize(-relativePos);
+    vec3 viewDir = safeViewDir(relativePos);
     float ndv = clamp(abs(dot(normal, viewDir)), 0.0, 1.0);
     float softEdge = smoothstep(0.03, 0.35, ndv);
 
@@ -581,7 +588,8 @@ vec4 styleShockCone(vec2 uv) {
     float w3 = (1.0 - smoothstep(0.02, 0.10, abs(fract(shiftedY + 0.67) - 0.22))) * 0.52;
     float bands = (w1 + w2 + w3) * (0.55 + 0.65 * nB);
 
-    float frontWave = exp(-pow((uv.y - progress) * 7.5, 2.0));
+    float qFront = (uv.y - progress) * 7.5;
+    float frontWave = exp(-(qFront * qFront));
     float endFade = smoothstep(0.0, 0.08, uv.y) * (1.0 - smoothstep(0.75, 1.0, uv.y));
     float throatGlow = exp(-uv.y * 6.0) * throat;
 
@@ -598,7 +606,7 @@ vec4 styleShockCone(vec2 uv) {
 // params: x = 边缘日冕锐度, y = 湍流对比度, z = 流动速度, w = 脉动强度
 vec4 styleCorona(vec2 uv) {
     vec3 normal = surfaceNormal();
-    vec3 viewDir = normalize(-relativePos);
+    vec3 viewDir = safeViewDir(relativePos);
     float ndv = clamp(abs(dot(normal, viewDir)), 0.0, 1.0);
     float rimPower = max(FxParams.x, 1.0);
     float contrast = max(FxParams.y, 0.5);
@@ -606,7 +614,8 @@ vec4 styleCorona(vec2 uv) {
     float pulse = FxParams.w;
 
     // 3D 三平面采样保证 360° 零接缝、零极点挤压
-    vec3 w = pow(abs(normal), vec3(3.0));
+    vec3 an = abs(normal);
+    vec3 w = an * an * an;
     w /= max(w.x + w.y + w.z, 1.0e-4);
     vec4 sXY = texture(Sampler1, fract(normal.xy * 0.85 + vec2(t * 0.16, -t * 0.11)));
     vec4 sYZ = texture(Sampler1, fract(normal.yz * 0.85 + vec2(-t * 0.13, t * 0.19)));
@@ -620,8 +629,8 @@ vec4 styleCorona(vec2 uv) {
 
     float plasma = clamp(baseSample.r * 0.55 + fineSample.g * 0.55, 0.0, 1.0);
     float veins = smoothstep(0.45, 0.92, fineSample.g);
-    float rim = pow(1.0 - ndv, rimPower);
-    float hardRim = pow(1.0 - ndv, rimPower * 2.4);
+    float rim = fxSafePow(1.0 - ndv, rimPower);
+    float hardRim = fxSafePow(1.0 - ndv, rimPower * 2.4);
 
     if (FxBlendMode > 0.5) {
         // 实心日蚀内核：中心极深黑紫压暗背景，表面浮现微弱沸腾裂纹与深渊边缘
@@ -645,9 +654,9 @@ vec4 styleAfterimage(vec2 uv) {
     float lineWidth = max(gRadialWidth * 2.5, 0.05) * max(FxParams.x, 0.1);
     float edgeLine = smoothstep(1.0 - lineWidth * 2.2, 1.0 - lineWidth * 0.3, edge);
 
-    vec3 viewDir = normalize(-relativePos);
+    vec3 viewDir = safeViewDir(relativePos);
     float ndv = clamp(abs(dot(gFaceNormal, viewDir)), 0.0, 1.0);
-    float rim = pow(1.0 - ndv, 2.2);
+    float rim = fxSafePow(1.0 - ndv, 2.2);
 
     float scan = 0.5 + 0.5 * sin(relativePos.y * FxParams.z * 6.2831 - FxTime * 9.0);
     scan = smoothstep(0.55, 1.0, scan);
@@ -674,7 +683,7 @@ vec4 styleAfterimage(vec2 uv) {
 // 虚空裂口半宽轮廓（uv.y 沿裂口方向 [-1,1]，返回 uv.x 方向半宽）。
 float slitHalfWidth(float y, float open, float jag, float variant) {
     float ay = abs(y);
-    float profile = variant < 0.5 ? pow(max(1.0 - ay * ay, 0.0), 0.75) : (1.0 - smoothstep(0.82, 1.0, ay));
+    float profile = variant < 0.5 ? fxSafePow(max(1.0 - ay * ay, 0.0), 0.75) : (1.0 - smoothstep(0.82, 1.0, ay));
     float ridge = texture(Sampler1, fract(vec2(0.13 + variant * 0.37, y * 0.45 + FxTime * 0.07))).g;
     float fine = fxNoise1(y * 23.0 + FxTime * 3.0);
     float tear = (ridge - 0.5) * 0.7 + (fine - 0.5) * 0.3;
@@ -735,7 +744,7 @@ vec4 styleVoidSlit(vec2 uv) {
 // params: x = 菲涅尔锐度, y = 晶脉流动速度, z = 蓄压过载强度(0..1), w = 溶解/重铸进度(0..1)
 vec4 styleCrystalShard(vec2 uv) {
     vec3 normal = gFaceNormal;
-    vec3 viewDir = normalize(-relativePos);
+    vec3 viewDir = safeViewDir(relativePos);
     float ndv = clamp(abs(dot(normal, viewDir)), 0.0, 1.0);
     float rimPower = max(FxParams.x, 1.2);
     float flowSpeed = FxParams.y;
@@ -767,9 +776,9 @@ vec4 styleCrystalShard(vec2 uv) {
     // 钻石式双方向硬切面高光：使八面体 8 个三角面在旋转中交替闪现冷光
     vec3 keyDir = normalize(vec3(0.45, 0.82, 0.35));
     float keyLight = clamp(abs(dot(normal, keyDir)), 0.0, 1.0);
-    float facet = 0.30 + 0.70 * pow(keyLight, 1.6);
-    float rim = pow(1.0 - ndv, rimPower);
-    float hardRim = pow(1.0 - ndv, rimPower * 2.1);
+    float facet = 0.30 + 0.70 * fxSafePow(keyLight, 1.6);
+    float rim = fxSafePow(1.0 - ndv, rimPower);
+    float hardRim = fxSafePow(1.0 - ndv, rimPower * 2.1);
 
     if (FxBlendMode > 0.5) {
         // Body 实体晶核：深邃黑曜紫底 + 切面微弱冷色反光 + 极细暗紫晶脉，彻底压住高光防止白天发白
@@ -835,14 +844,16 @@ void main() {
         res = styleCrystalShard(texCoord0);
     }
 
+    vec3 safeRgb = max(fxSanitize(res.rgb), vec3(0.0));
+    float safeA = (isnan(res.a) || isinf(res.a)) ? 0.0 : res.a;
     if (FxBlendMode > 0.5) {
-        float outAlpha = clamp(res.a * vertexColor.a * mask, 0.0, 1.0);
+        float outAlpha = clamp(safeA * vertexColor.a * mask, 0.0, 1.0);
         if (outAlpha <= 0.002) {
             discard;
         }
         // 预乘 Alpha 输出：支持纯黑/暗紫暗部层 + 正常半透明烟壳叠加
-        fragColor = vec4(max(res.rgb, vec3(0.0)) * FxEmission * outAlpha, outAlpha);
+        fragColor = vec4(safeRgb * FxEmission * outAlpha, outAlpha);
     } else {
-        fragColor = vec4(max(res.rgb, vec3(0.0)) * vertexColor.a * FxEmission * mask, 1.0);
+        fragColor = vec4(safeRgb * vertexColor.a * FxEmission * mask, 1.0);
     }
 }

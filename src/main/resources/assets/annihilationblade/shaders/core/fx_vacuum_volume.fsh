@@ -59,7 +59,7 @@ void main() {
                 vec3 local = rd * t - zc;
                 vec3 n = local / max(Bubble.x, 1.0e-3);
                 float limb = min(Bubble.z / max(abs(dot(n, rd)), 0.06), 14.0);
-                float band = atan(local.z, local.x) * 0.48 + local.y * 0.02 + FxTime * 0.6;
+                float band = fxSafeAtan(local.z, local.x) * 0.48 + local.y * 0.02 + FxTime * 0.6;
                 vec3 tint = mix(vec3(0.4, 0.85, 1.0), iridescence(band), 0.55);
                 float boxFade = 1.0 - smoothstep(Zone.w * 1.05, Zone.w * 1.4, max(abs(local.x), abs(local.z)));
                 acc += tint * limb * Bubble.y * 0.3 * (0.4 + 0.6 * boxFade);
@@ -105,7 +105,7 @@ void main() {
             float field = zoneMask(local, Bubble.x) * strength;
             if (field > 0.0) {
                 float wave = fract(length(local.xz) / 22.0 - FxTime * 0.45);
-                float pulse = pow(wave, 10.0);
+                float pulse = fxSafePow(wave, 10.0);
                 acc += vec3(0.3, 0.75, 1.0) * (glowMajor * 0.35 + glowMinor * pulse * 0.6) * field;
             }
         }
@@ -123,14 +123,16 @@ void main() {
     // 湮灭闪光半径与冲击波厚度挂钩（Shock.z × 8），随结界尺寸缩放
     float flashRadius = max(Shock.z, 0.5) * 8.0;
     if (Shock.w > 0.0 && tc > 0.0 && tc - flashRadius < sceneT) {
-        acc += vec3(0.85, 0.95, 1.0) * exp(-pow(dCore / flashRadius, 2.0)) * Shock.w * 3.5;
+        float qFlash = dCore / flashRadius;
+        acc += vec3(0.85, 0.95, 1.0) * exp(-(qFlash * qFlash)) * Shock.w * 3.5;
     }
 
     // 5. 冲击波光边
     if (Shock.y > 0.0 && tc > 0.0) {
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dCore * dCore, 0.0));
         if (frontT < sceneT) {
-            acc += vec3(0.6, 0.85, 1.0) * exp(-pow((dCore - Shock.x) / max(Shock.z, 0.1), 2.0)) * Shock.y * 1.6;
+            float qShock = (dCore - Shock.x) / max(Shock.z, 0.1);
+            acc += vec3(0.6, 0.85, 1.0) * exp(-(qShock * qShock)) * Shock.y * 1.6;
         }
     }
 

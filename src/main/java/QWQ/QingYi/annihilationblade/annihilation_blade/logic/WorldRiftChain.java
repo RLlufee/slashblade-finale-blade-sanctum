@@ -2,6 +2,7 @@ package QWQ.QingYi.annihilationblade.annihilation_blade.logic;
 
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.CausalityCollapse;
 import QWQ.QingYi.annihilationblade.annihilation_blade.visual.AnnihilationFxEvents;
+import QWQ.QingYi.annihilationblade.common.EntitySuspensionManager;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
@@ -46,9 +47,9 @@ import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
  */
 @EventBusSubscriber(modid = "annihilationblade")
 public final class WorldRiftChain {
+   private static final String SUSPENSION_PREFIX = "world_rift:";
    private static final Map<UUID, Long> LAST_TRIGGER = new HashMap<>();
    private static final Map<UUID, SingleChainSequence> ACTIVE_CHAINS = new HashMap<>();
-   private static final Map<UUID, TargetSuspension> SUSPENSIONS = new HashMap<>();
    private static final Map<UUID, LinkageBuffer> PREPARING_LINKAGES = new HashMap<>();
    private static final List<PendingLinkage> PENDING_LINKAGES = new ArrayList<>();
    private static boolean executingChain;
@@ -81,7 +82,7 @@ public final class WorldRiftChain {
 
    /** 指定实体当前是否正被裂界单链活体定身（供因果坍缩微扰定身避让）。 */
    public static boolean isEntitySuspended(UUID entityUuid) {
-      return SUSPENSIONS.containsKey(entityUuid);
+      return EntitySuspensionManager.isHeldByPrefix(entityUuid, SUSPENSION_PREFIX);
    }
 
    /** 玩家离线、换维度或死亡时清理其全部裂界活跃态与未爆发联动。 */
@@ -92,6 +93,15 @@ public final class WorldRiftChain {
          AnnihilationFxEvents.worldRiftEnd(chain.handle);
       }
       cancelDankongLinkage(playerId);
+      // 同步清理已进入延迟爆发队列的该玩家联动，防止收刀切维后仍在旧维引爆
+      Iterator<PendingLinkage> pendingIt = PENDING_LINKAGES.iterator();
+      while (pendingIt.hasNext()) {
+         PendingLinkage pending = pendingIt.next();
+         if (pending.buffer.player.getUUID().equals(playerId)) {
+            AnnihilationFxEvents.worldRiftEnd(pending.buffer.handle);
+            pendingIt.remove();
+         }
+      }
       LAST_TRIGGER.remove(playerId);
    }
 
@@ -112,7 +122,7 @@ public final class WorldRiftChain {
       if (target == null || !target.isAlive() || !SlashBladeTargeting.canAttack(player, target)) {
          return;
       }
-      if (ACTIVE_CHAINS.containsKey(player.getUUID()) || SUSPENSIONS.containsKey(target.getUUID())) {
+      if (ACTIVE_CHAINS.containsKey(player.getUUID()) || isEntitySuspended(target.getUUID())) {
          return;
       }
       if (!SpecialEffectSupport.tryStartCooldown(LAST_TRIGGER, player, level.getGameTime(), config.cooldownTicks.getValue())) {
@@ -237,6 +247,7 @@ public final class WorldRiftChain {
 
    private static void tickSingleChains() {
       ModConfig.WorldRift config = ModConfig.COMMON.annihilationBlade.worldRift;
+      List<PendingChainExecution> pendingExecutions = new ArrayList<>();
       Iterator<Map.Entry<UUID, SingleChainSequence>> iterator = ACTIVE_CHAINS.entrySet().iterator();
       while (iterator.hasNext()) {
          SingleChainSequence sequence = iterator.next().getValue();
@@ -281,7 +292,7 @@ public final class WorldRiftChain {
                sequence.lastTargetHeight = current.getBbHeight();
             }
             boolean handoff = shouldChainCausalityCollapse(player);
-            // 先发 SNAP 更新再静默处决，保证客户端可在移除前做最后一次姿态同步
+            // 先发 SNAP 更新再延后静默处决，保证客户端可在移除前做最后一次姿态同步且避免 PVP 迭代 CME
             AnnihilationFxEvents.worldRiftUpdate(
                sequence.handle, sequence.level, player, sequence.lastCenter, Vec3.ZERO,
                sequence.radius, sequence.visualScale,
@@ -290,12 +301,7 @@ public final class WorldRiftChain {
             );
             releaseCurrent(sequence);
             if (current != null && current.isAlive() && SlashBladeTargeting.canAttack(player, current)) {
-               executingChain = true;
-               try {
-                  TerminusLogic.executeSilent(current, player);
-               } finally {
-                  executingChain = false;
-               }
+               pendingExecutions.add(new PendingChainExecution(player, current));
             }
             // 单链神威联动：等待本节点 3D 躯壳吸穿奇点后，在该敌人原位留下一道同源扭曲因果裂痕
             if (handoff) {
@@ -334,6 +340,23 @@ public final class WorldRiftChain {
 
          sequence.nodeAge++;
       }
+
+      if (!pendingExecutions.isEmpty()) {
+         executingChain = true;
+         try {
+            for (PendingChainExecution execution : pendingExecutions) {
+               if (execution.target.isAlive() && !execution.target.isRemoved()
+                     && SlashBladeTargeting.canAttack(execution.player, execution.target)) {
+                  TerminusLogic.executeSilent(execution.target, execution.player);
+               }
+            }
+         } finally {
+            executingChain = false;
+         }
+      }
+   }
+
+   private record PendingChainExecution(ServerPlayer player, LivingEntity target) {
    }
 
    private static void tickPendingLinkages() {
@@ -407,6 +430,9 @@ public final class WorldRiftChain {
 
    @SubscribeEvent
    public static void onLivingDeath(LivingDeathEvent event) {
+      if (event.getEntity().level().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof ServerPlayer player) {
          clearPlayer(player.getUUID());
       }
@@ -415,6 +441,9 @@ public final class WorldRiftChain {
 
    @SubscribeEvent
    public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+      if (event.getLevel().isClientSide()) {
+         return;
+      }
       if (event.getEntity() instanceof LivingEntity living) {
          releaseSuspensionByEntity(living);
       }
@@ -435,7 +464,6 @@ public final class WorldRiftChain {
       ACTIVE_CHAINS.clear();
       PREPARING_LINKAGES.clear();
       PENDING_LINKAGES.clear();
-      SUSPENSIONS.clear();
       LAST_TRIGGER.clear();
    }
 
@@ -450,7 +478,7 @@ public final class WorldRiftChain {
          sequence.lastCenter,
          sequence.radius,
          entity -> !sequence.visited.contains(entity.getUUID())
-            && !SUSPENSIONS.containsKey(entity.getUUID())
+            && !isEntitySuspended(entity.getUUID())
             && SpecialEffectSupport.centerOf(entity).distanceToSqr(sequence.attackerOrigin) <= chainRangeSqr
       );
       return candidates.isEmpty() ? null : candidates.get(0);
@@ -470,14 +498,7 @@ public final class WorldRiftChain {
          sequence.suspended = false;
          return;
       }
-      TargetSuspension suspension = SUSPENSIONS.get(target.getUUID());
-      if (suspension == null) {
-         suspension = new TargetSuspension(
-            target, target.isNoGravity(), target instanceof Mob mob && mob.isNoAi(), target.getDeltaMovement()
-         );
-         SUSPENSIONS.put(target.getUUID(), suspension);
-      }
-      suspension.references++;
+      EntitySuspensionManager.acquire(target, sequence.suspensionToken, true, true);
       sequence.suspended = true;
       holdSuspendedTarget(target, WorldRiftPattern.vortexCenter(target));
    }
@@ -504,7 +525,7 @@ public final class WorldRiftChain {
       sequence.suspended = false;
       Entity entity = sequence.level.getEntity(sequence.currentTargetId);
       LivingEntity living = entity instanceof LivingEntity value && value.getUUID().equals(sequence.currentTargetUuid) ? value : null;
-      releaseSuspension(sequence.currentTargetUuid, living);
+      EntitySuspensionManager.release(sequence.currentTargetUuid, living, sequence.suspensionToken);
    }
 
    private static void releaseSuspensionByEntity(LivingEntity target) {
@@ -512,27 +533,8 @@ public final class WorldRiftChain {
       for (SingleChainSequence sequence : ACTIVE_CHAINS.values()) {
          if (sequence.suspended && sequence.currentTargetUuid.equals(targetId)) {
             sequence.suspended = false;
-            releaseSuspension(targetId, target);
+            EntitySuspensionManager.release(targetId, target, sequence.suspensionToken);
          }
-      }
-   }
-
-   private static void releaseSuspension(UUID targetUuid, LivingEntity resolved) {
-      TargetSuspension suspension = SUSPENSIONS.get(targetUuid);
-      if (suspension == null) {
-         return;
-      }
-      suspension.references--;
-      if (suspension.references > 0) {
-         return;
-      }
-      SUSPENSIONS.remove(targetUuid);
-      LivingEntity restore = resolved != null ? resolved : suspension.entity;
-      restore.setNoGravity(suspension.originalNoGravity);
-      restore.setDeltaMovement(suspension.originalVelocity);
-      restore.hasImpulse = true;
-      if (restore instanceof Mob mob) {
-         mob.setNoAi(suspension.originalNoAi);
       }
    }
 
@@ -551,6 +553,7 @@ public final class WorldRiftChain {
       final double visualScale;
       final int maxChain;
       final long seed;
+      final String suspensionToken;
       final Set<UUID> visited = new HashSet<>();
       int currentTargetId;
       UUID currentTargetUuid;
@@ -574,6 +577,7 @@ public final class WorldRiftChain {
          this.visualScale = visualScale;
          this.maxChain = maxChain;
          this.seed = seed;
+         this.suspensionToken = SUSPENSION_PREFIX + player.getUUID() + ":" + handle;
          this.currentTargetId = currentTargetId;
          this.currentTargetUuid = currentTargetUuid;
          this.lastCenter = lastCenter;
@@ -626,21 +630,6 @@ public final class WorldRiftChain {
          this.buffer = buffer;
          this.origin = origin;
          this.delayTicks = delayTicks;
-      }
-   }
-
-   private static final class TargetSuspension {
-      final LivingEntity entity;
-      final boolean originalNoGravity;
-      final boolean originalNoAi;
-      final Vec3 originalVelocity;
-      int references;
-
-      TargetSuspension(LivingEntity entity, boolean originalNoGravity, boolean originalNoAi, Vec3 originalVelocity) {
-         this.entity = entity;
-         this.originalNoGravity = originalNoGravity;
-         this.originalNoAi = originalNoAi;
-         this.originalVelocity = originalVelocity;
       }
    }
 }

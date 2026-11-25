@@ -3,6 +3,7 @@ package QWQ.QingYi.annihilationblade.loli_blade;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 受保护玩家名册：登记当前“持有萝莉之刃且开启防御”的玩家 UUID。
@@ -13,7 +14,7 @@ import java.util.UUID;
  * 避免在高频拦截路径上反复扫描玩家背包。
  */
 public final class LoliBladeProtectionManager {
-   private static final Set<UUID> PROTECTED = new HashSet<>();
+   private static final Set<UUID> PROTECTED = ConcurrentHashMap.newKeySet();
 
    private LoliBladeProtectionManager() {
    }

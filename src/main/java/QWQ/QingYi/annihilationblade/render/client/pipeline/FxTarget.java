@@ -52,7 +52,13 @@ final class FxTarget {
       } else {
          this.target.resize(width, height, Minecraft.ON_OSX);
       }
-      this.reformat();
+      try {
+         this.reformat();
+      } catch (Throwable throwable) {
+         // 帧缓冲重建失败时立刻释放半成品对象并置空，避免下次 ensure 误以为目标已就绪
+         this.destroy();
+         throw throwable;
+      }
       this.target.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
       this.target.clear(Minecraft.ON_OSX);
       return true;

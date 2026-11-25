@@ -52,7 +52,7 @@ void main() {
                 float disk = smoothstep(0.9975, 0.9985, moon);
                 float spots = fxFbm3(rd * 120.0) * 0.5 + 0.5;
                 sky = mix(sky, vec3(0.95, 0.12, 0.1) * spots, disk);
-                sky += vec3(0.6, 0.03, 0.04) * pow(max(moon, 0.0), 220.0) * 0.8;
+                sky += vec3(0.6, 0.03, 0.04) * fxSafePow(max(moon, 0.0), 220.0) * 0.8;
                 color = mix(color, sky, 0.9 * inside);
             }
         }

@@ -143,9 +143,9 @@ public final class PhantomJudgementFx extends FxInstance {
       this.initTargets(level, packet.entityIds());
       this.buildSwarm();
 
-      // 若中途进场收到的是 PHANTOM_DETONATE 快照，立刻转入齐爆态避免空白帧
+      // 若中途进场收到的是 PHANTOM_DETONATE 快照，立刻转入齐爆态并对齐当前 elapsed 年龄
       if (AnnihilationFxEvents.phantomKind(packed) == AnnihilationFxEvents.PHANTOM_DETONATE) {
-         this.triggerDetonate(level, 0, packet.entityIds(), false);
+         this.triggerDetonate(level, this.age, packet.entityIds(), false);
       }
    }
 

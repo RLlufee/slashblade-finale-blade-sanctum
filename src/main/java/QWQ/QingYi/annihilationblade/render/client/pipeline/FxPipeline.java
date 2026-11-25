@@ -12,6 +12,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.platform.GlStateManager.DestFactor;
 import com.mojang.blaze3d.platform.GlStateManager.SourceFactor;
+import com.mojang.blaze3d.shaders.BlendMode;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -50,6 +51,8 @@ public final class FxPipeline {
    public static final FxPipeline INSTANCE = new FxPipeline();
    private static final int BLOOM_LEVELS = 6;
    private static final Matrix4f IDENTITY = new Matrix4f();
+   private static final BlendMode OPAQUE_BLEND = new BlendMode();
+   private static final BlendMode STANDARD_BLEND = new BlendMode(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL14.GL_FUNC_ADD);
    private static final ResourceLocation FLOW_NOISE = ResourceLocation.fromNamespaceAndPath(Annihilationblade.MODID, "textures/fx/fx_flow_noise.png");
 
    private final FxTarget depth = new FxTarget(FxTarget.Format.R32F);
@@ -109,6 +112,17 @@ public final class FxPipeline {
    }
 
    /**
+    * 强制把原版 {@link BlendMode} 静态缓存 {@code lastApplied} 对齐到标准 core shader 混合模式。
+    * 原版 {@code BlendMode.apply()} 仅在 {@code opaque} 翻转时更新 {@code lastApplied}，
+    * 因此先切一次不透明再切回标准混合，确保此后全部 20 个 {@code fx_*.json} 的 {@code shader.apply()}
+    * 命中相等缓存成为空操作，不再覆盖 {@code RenderSystem} 显式设置的禁用/预乘/加法混合状态。
+    */
+   private static void syncBlendCache() {
+      OPAQUE_BLEND.apply();
+      STANDARD_BLEND.apply();
+   }
+
+   /**
     * 复制当前主深度。会完整恢复调用前的帧缓冲绑定、混合因子与视口（Fabulous 下此时绑定的是天气目标）。
     */
    public void captureDepth() {
@@ -127,6 +141,7 @@ public final class FxPipeline {
       StateGuard guard = StateGuard.capture();
       int savedTexture = RenderSystem.getShaderTexture(0);
       try {
+         syncBlendCache();
          this.depth.ensure(main.width, main.height);
          this.depth.bindWrite();
          RenderSystem.disableBlend();
@@ -175,6 +190,7 @@ public final class FxPipeline {
       PoseStack modelView = RenderSystem.getModelViewStack();
       modelView.pushPose();
       try {
+         syncBlendCache();
          RenderSystem.disableDepthTest();
          RenderSystem.depthMask(false);
          RenderSystem.disableCull();
@@ -198,6 +214,9 @@ public final class FxPipeline {
             this.body.ensure(width, height);
             this.body.clear();
             this.body.bindWrite();
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+            RenderSystem.disableCull();
             RenderSystem.enableBlend();
             RenderSystem.blendFuncSeparate(SourceFactor.ONE, DestFactor.ONE_MINUS_SRC_ALPHA, SourceFactor.ONE, DestFactor.ONE_MINUS_SRC_ALPHA);
             FxGeometry bodyGeometry = new FxGeometry(frame, true);
@@ -215,6 +234,9 @@ public final class FxPipeline {
          this.fx.ensure(width, height);
          this.fx.clear();
          this.fx.bindWrite();
+         RenderSystem.disableDepthTest();
+         RenderSystem.depthMask(false);
+         RenderSystem.disableCull();
          RenderSystem.enableBlend();
          RenderSystem.blendFunc(SourceFactor.ONE, DestFactor.ONE);
          FxGeometry geometry = new FxGeometry(frame, false);
@@ -256,6 +278,9 @@ public final class FxPipeline {
          if (!scenePasses.isEmpty()) {
             this.sceneB.ensure(width, height);
             boolean writeB = true;
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+            RenderSystem.disableCull();
             RenderSystem.disableBlend();
             for (FxPass pass : scenePasses) {
                FxTarget out = writeB ? this.sceneB : this.sceneA;
@@ -278,6 +303,9 @@ public final class FxPipeline {
             this.volume.ensure(Math.max(1, (int)(width * scale)), Math.max(1, (int)(height * scale)));
             this.volume.clear();
             this.volume.bindWrite();
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+            RenderSystem.disableCull();
             RenderSystem.enableBlend();
             RenderSystem.blendFunc(SourceFactor.ONE, DestFactor.ONE);
             for (FxPass pass : volumePasses) {
@@ -298,23 +326,51 @@ public final class FxPipeline {
             bloomTexture = this.bloom(width, height, hasVolume);
          }
 
-         // 6. 合成回主画面
-         main.bindWrite(true);
-         RenderSystem.disableBlend();
+         // 6. 合成回主画面（当启用径向模糊/速度线/色差时，拆成 HDR 预合成 + 单纹理后处理两阶段，把最重帧采样量降到 1/4 以下）
          ShaderInstance composite = FxShaders.composite;
+         float aberration = (float)(screen.aberration * config.chromaticAberration.getValue());
+         boolean multiTapPost = screen.zoomBlur > 0.001F || screen.dashBlur > 0.001F || aberration > 0.001F;
+         float bodyWeight = hasBody ? 1.0F : 0.0F;
+         float volumeWeight = hasVolume ? 1.0F : 0.0F;
+         float activeBloom = bloomTexture != 0 ? bloomStrength : 0.0F;
+
          RenderSystem.setShaderTexture(0, sceneTexture);
          RenderSystem.setShaderTexture(1, this.fx.texture());
          RenderSystem.setShaderTexture(2, hasVolume ? this.volume.texture() : this.fx.texture());
          RenderSystem.setShaderTexture(3, bloomTexture != 0 ? bloomTexture : this.fx.texture());
          RenderSystem.setShaderTexture(4, hasBody ? this.body.texture() : this.fx.texture());
          this.commonUniforms(composite, frame, width, height);
+         composite.safeGetUniform("BodyWeight").set(bodyWeight);
+         composite.safeGetUniform("VolumeWeight").set(volumeWeight);
+         composite.safeGetUniform("BloomStrength").set(activeBloom);
+
+         int finalSceneTexture = sceneTexture;
+         if (multiTapPost) {
+            // 复用另一张闲置的场景缓冲（sceneA/sceneB 乒乓切换）存放单次 HDR 预合成结果，零新增显存
+            FxTarget precompTarget = sceneTexture == this.sceneA.texture() ? this.sceneB : this.sceneA;
+            precompTarget.ensure(width, height);
+            precompTarget.bindWrite();
+            RenderSystem.disableDepthTest();
+            RenderSystem.depthMask(false);
+            RenderSystem.disableCull();
+            RenderSystem.disableBlend();
+            composite.safeGetUniform("PostMode").set(1.0F);
+            this.fullscreen(composite);
+            finalSceneTexture = precompTarget.texture();
+         }
+
+         // 每次 ensure/resize 可能由原版 RenderTarget._resize() 重新开启深度测试，回写主画面前必须显式关闭
+         main.bindWrite(true);
+         RenderSystem.disableDepthTest();
+         RenderSystem.depthMask(false);
+         RenderSystem.disableCull();
+         RenderSystem.disableBlend();
+         RenderSystem.setShaderTexture(0, finalSceneTexture);
          float flash = (float)(screen.flash * config.screenFlash.getValue());
-         composite.safeGetUniform("BodyWeight").set(hasBody ? 1.0F : 0.0F);
-         composite.safeGetUniform("VolumeWeight").set(hasVolume ? 1.0F : 0.0F);
-         composite.safeGetUniform("BloomStrength").set(bloomTexture != 0 ? bloomStrength : 0.0F);
+         composite.safeGetUniform("PostMode").set(multiTapPost ? 2.0F : 0.0F);
          composite.safeGetUniform("Flash").set(screen.flashR, screen.flashG, screen.flashB, Math.min(1.0F, flash));
          composite.safeGetUniform("FlashExtra").set(screen.flashBoost, 0.0F);
-         composite.safeGetUniform("Aberration").set((float)(screen.aberration * config.chromaticAberration.getValue()));
+         composite.safeGetUniform("Aberration").set(aberration);
          composite.safeGetUniform("ZoomBlur").set(screen.zoomBlur);
          composite.safeGetUniform("DashBlur").set(screen.dashBlur);
          composite.safeGetUniform("Center").set(screen.centerX, screen.centerY);
@@ -327,6 +383,11 @@ public final class FxPipeline {
       } catch (Throwable throwable) {
          this.fail("frame", throwable);
       } finally {
+         // 若某特效在 FxGeometry.begin()~end() 间抛异常，必须丢弃未闭合的全局 BufferBuilder，防止后续原版渲染抛 Already building! 硬崩
+         BufferBuilder globalBuilder = Tesselator.getInstance().getBuilder();
+         if (globalBuilder.building()) {
+            globalBuilder.discard();
+         }
          modelView.popPose();
          RenderSystem.applyModelViewMatrix();
          RenderSystem.restoreProjectionMatrix();

@@ -14,7 +14,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import mods.flammpfeil.slashblade.item.ItemSlashBlade;
+import mods.flammpfeil.slashblade.registry.SpecialEffectsRegistry;
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
@@ -29,6 +31,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.IForgeRegistry;
 import org.joml.Matrix4f;
 
 public final class TerminusTooltipRenderer {
@@ -98,42 +101,21 @@ public final class TerminusTooltipRenderer {
          return true;
       }
 
-      if (!isBladeAsset(tag.getString("ModelName")) && !isBladeAsset(tag.getString("TextureName"))) {
-         if ("annihilationblade:spatial_fracture".equals(tag.getString("SlashArts"))) {
-            return true;
-         }
-
-         CompoundTag bladeState = tag.getCompound("bladeState");
-         ListTag specialEffects = bladeState.getList("SpecialEffects", 8);
-
-         for (int i = 0; i < specialEffects.size(); i++) {
-            for (String effectId : SPECIAL_EFFECT_IDS) {
-               if (effectId.equals(specialEffects.getString(i))) {
-                  return true;
-               }
-            }
-         }
-
-         return false;
-      } else {
-         return true;
-      }
+      // 仅匹配湮灭之刃本体，避免误劫持移植了本模组 SE 或 SA 的其他拔刀剑的 Tooltip
+      return isBladeAsset(tag.getString("ModelName")) || isBladeAsset(tag.getString("TextureName"));
    }
 
    public static void render(GuiGraphics graphics, Font font, ItemStack stack, List<Component> vanillaLines, int mouseX, int mouseY) {
       int screenWidth = graphics.guiWidth();
       int screenHeight = graphics.guiHeight();
-      int width = Math.min(286, Math.max(190, screenWidth - 18));
+      int width = Math.min(WIDTH, Math.max(MIN_WIDTH, screenWidth - 18));
       int contentWidth = width - 24;
       List<FormattedCharSequence> descriptionLines = wrapDescription(font, contentWidth);
       List<FormattedCharSequence> enchantmentLines = wrapEnchantments(font, stack, contentWidth);
       TerminusTooltipRenderer.BladeStats bladeStats = readBladeStats(stack);
       List<String> activeEffects = getActiveSpecialEffects(stack);
       int seCount = activeEffects.size();
-      int columns = Math.max(1, (width - 24) / 84);
-      if (seCount > 0 && seCount < columns) {
-         columns = seCount;
-      }
+      int columns = resolveChipColumns(font, activeEffects, contentWidth);
 
       int rows = seCount == 0 ? 0 : (seCount + columns - 1) / columns;
       int rowHeight = 16;
@@ -141,7 +123,11 @@ public final class TerminusTooltipRenderer {
       int descriptionHeight = descriptionLines.size() * 10;
       int enchantmentHeight = enchantmentLines.isEmpty() ? 0 : 14 + enchantmentLines.size() * 10;
       int enchantYOffset = 161 + totalChipHeight + (seCount > 0 ? 10 : 0);
-      int height = enchantYOffset + enchantmentHeight + descriptionHeight + 10;
+      // 补齐 renderContent 中附魔块与描述块之间的间距（+4 / +7）与底边装饰条留白，防止底线压穿末行文字
+      int descGap = enchantmentHeight == 0 ? 4 : 7;
+      int rawHeight = enchantYOffset + enchantmentHeight + descGap + descriptionHeight + 14;
+      int maxPanelHeight = Math.max(180, screenHeight - 12);
+      int height = Math.min(rawHeight, maxPanelHeight);
       int x = mouseX + 12;
       int y = mouseY - 14;
       if (x + width > screenWidth - 6) {
@@ -165,8 +151,22 @@ public final class TerminusTooltipRenderer {
       graphics.pose().translate(0.0F, 0.0F, 720.0F);
       renderFrame(graphics, x, y, width, height, time);
       renderTerminusSeals(graphics, x, y, width, height, time);
-      renderContent(graphics, font, stack, vanillaLines, descriptionLines, enchantmentLines, bladeStats, activeEffects, x, y, width, height, time);
+      renderContent(graphics, font, stack, vanillaLines, descriptionLines, enchantmentLines, bladeStats, activeEffects, columns, x, y, width, height, time);
       graphics.pose().popPose();
+   }
+
+   private static int resolveChipColumns(Font font, List<String> activeEffects, int contentWidth) {
+      int seCount = activeEffects.size();
+      if (seCount == 0) {
+         return 1;
+      }
+      int maxLabelWidth = 0;
+      for (String effectId : activeEffects) {
+         maxLabelWidth = Math.max(maxLabelWidth, font.width(getEffectDisplayName(effectId)));
+      }
+      int requiredChipWidth = Math.max(84, maxLabelWidth + 12);
+      int columns = Math.max(1, Math.min(3, (contentWidth + CHIP_GAP) / (requiredChipWidth + CHIP_GAP)));
+      return Math.min(columns, seCount);
    }
 
    private static List<String> getActiveSpecialEffects(ItemStack stack) {
@@ -176,11 +176,16 @@ public final class TerminusTooltipRenderer {
          return effects;
       }
 
+      IForgeRegistry<?> registry = SpecialEffectsRegistry.REGISTRY.get();
       CompoundTag bladeState = tag.getCompound("bladeState");
       ListTag specialEffects = bladeState.getList("SpecialEffects", 8);
 
       for (int i = 0; i < specialEffects.size(); i++) {
-         effects.add(specialEffects.getString(i));
+         String raw = specialEffects.getString(i);
+         ResourceLocation id = ResourceLocation.tryParse(raw);
+         if (id != null && (registry == null || registry.containsKey(id))) {
+            effects.add(raw);
+         }
       }
 
       return effects;
@@ -210,13 +215,16 @@ public final class TerminusTooltipRenderer {
    private static ItemStack cachedTerminusEnchantStack = ItemStack.EMPTY;
    private static CompoundTag cachedTerminusEnchantTag = null;
    private static int cachedTerminusEnchantWidth = -1;
+   private static String cachedTerminusEnchantLang = "";
    private static List<FormattedCharSequence> cachedTerminusEnchantLines = null;
 
    private static List<FormattedCharSequence> wrapEnchantments(Font font, ItemStack stack, int contentWidth) {
       CompoundTag tag = stack.getTag();
-      if (cachedTerminusEnchantLines != null 
-            && cachedTerminusEnchantWidth == contentWidth 
-            && ItemStack.matches(cachedTerminusEnchantStack, stack) 
+      String langCode = Minecraft.getInstance().getLanguageManager().getSelected();
+      if (cachedTerminusEnchantLines != null
+            && cachedTerminusEnchantWidth == contentWidth
+            && java.util.Objects.equals(cachedTerminusEnchantLang, langCode)
+            && ItemStack.matches(cachedTerminusEnchantStack, stack)
             && java.util.Objects.equals(cachedTerminusEnchantTag, tag)) {
          return cachedTerminusEnchantLines;
       }
@@ -259,6 +267,7 @@ public final class TerminusTooltipRenderer {
       cachedTerminusEnchantStack = stack.copy();
       cachedTerminusEnchantTag = tag != null ? tag.copy() : null;
       cachedTerminusEnchantWidth = contentWidth;
+      cachedTerminusEnchantLang = langCode;
       cachedTerminusEnchantLines = lines;
       return lines;
    }
@@ -269,24 +278,34 @@ public final class TerminusTooltipRenderer {
       graphics.enableScissor(x + 2, y + 2, x + width - 2, y + height - 2);
       Matrix4f matrix = graphics.pose().last().pose();
 
-      for (int i = 0; i < 9; i++) {
-         float phase = (time * 0.11F + i * 0.137F) % 1.0F;
-         float sx = x - 28.0F + phase * (width + 56.0F);
-         float alpha = 0.18F + 0.12F * Mth.sin(time * 1.7F + i);
-         drawBeam(matrix, sx, y + height + 14.0F, sx + 70.0F, y - 18.0F, 1.4F, withAlpha(-648484865, alpha), withAlpha(-640598785, alpha * 0.65F));
-      }
+      beginQuadBatch();
+      try {
+         for (int i = 0; i < 9; i++) {
+            float phase = (time * 0.11F + i * 0.137F) % 1.0F;
+            float sx = x - 28.0F + phase * (width + 56.0F);
+            float alpha = 0.18F + 0.12F * Mth.sin(time * 1.7F + i);
+            drawBeam(matrix, sx, y + height + 14.0F, sx + 70.0F, y - 18.0F, 1.4F, withAlpha(-648484865, alpha), withAlpha(-640598785, alpha * 0.65F));
+         }
 
-      for (int i = 0; i < 34; i++) {
-         float seed = i * 12.9898F;
-         float px = x + 8.0F + noise(seed) * (width - 16.0F);
-         float py = y + 8.0F + noise(seed + 8.0F) * (height - 16.0F);
-         float pulse = 0.45F + 0.55F * Mth.sin(time * 2.3F + i * 0.71F);
-         int color = i % 5 == 0 ? -385887379 : (i % 2 == 0 ? -648484865 : -640598785);
-         drawQuad(matrix, px, py, px + 1.0F + pulse, py + 1.0F + pulse, withAlpha(color, 0.18F + pulse * 0.22F));
+         for (int i = 0; i < 34; i++) {
+            float seed = i * 12.9898F;
+            float px = x + 8.0F + noise(seed) * (width - 16.0F);
+            float py = y + 8.0F + noise(seed + 8.0F) * (height - 16.0F);
+            float pulse = 0.45F + 0.55F * Mth.sin(time * 2.3F + i * 0.71F);
+            int color = i % 5 == 0 ? -385887379 : (i % 2 == 0 ? -648484865 : -640598785);
+            drawQuad(matrix, px, py, px + 1.0F + pulse, py + 1.0F + pulse, withAlpha(color, 0.18F + pulse * 0.22F));
+         }
+      } finally {
+         endQuadBatch();
       }
 
       graphics.disableScissor();
-      renderExpandingGradientBorder(matrix, x, y, width, height, time);
+      beginQuadBatch();
+      try {
+         renderExpandingGradientBorder(matrix, x, y, width, height, time);
+      } finally {
+         endQuadBatch();
+      }
    }
 
    private static void renderBlackHoleArtwork(GuiGraphics graphics, int x, int y, int width, int height, float time) {
@@ -419,15 +438,20 @@ public final class TerminusTooltipRenderer {
       float mainCy = y + 58.0F;
       float minorCx = x + 45.0F;
       float minorCy = y + 55.0F;
-      drawRing(matrix, mainCx, mainCy, 42.0F, 1.1F, withAlpha(-640598785, 0.38F), time * 0.35F, 48, 0);
-      drawRing(matrix, mainCx, mainCy, 35.0F, 0.9F, withAlpha(-648484865, 0.35F), -time * 0.48F, 36, 1);
-      drawRotatingHexagram(matrix, mainCx, mainCy, 31.0F, time * 0.82F, 1.25F, withAlpha(-385887379, 0.62F), withAlpha(-640598785, 0.46F));
-      drawRotatingHexagram(matrix, mainCx, mainCy, 21.0F, -time * 1.18F, 0.9F, withAlpha(-252121089, 0.4F), withAlpha(-648484865, 0.48F));
-      drawOrbitingRunes(matrix, mainCx, mainCy, 39.0F, time, 12);
-      drawRing(matrix, minorCx, minorCy, 22.0F, 0.9F, withAlpha(-648484865, 0.36F), -time * 0.65F, 30, 0);
-      drawRotatingHexagram(matrix, minorCx, minorCy, 17.0F, -time * 1.05F, 0.95F, withAlpha(-640598785, 0.55F), withAlpha(-648484865, 0.38F));
-      drawOblivionCrown(matrix, x + width * 0.5F, y + 63.0F, width * 0.34F, time);
-      drawCausalityThreads(matrix, x, y, width, height, time);
+      beginQuadBatch();
+      try {
+         drawRing(matrix, mainCx, mainCy, 42.0F, 1.1F, withAlpha(-640598785, 0.38F), time * 0.35F, 48, 0);
+         drawRing(matrix, mainCx, mainCy, 35.0F, 0.9F, withAlpha(-648484865, 0.35F), -time * 0.48F, 36, 1);
+         drawRotatingHexagram(matrix, mainCx, mainCy, 31.0F, time * 0.82F, 1.25F, withAlpha(-385887379, 0.62F), withAlpha(-640598785, 0.46F));
+         drawRotatingHexagram(matrix, mainCx, mainCy, 21.0F, -time * 1.18F, 0.9F, withAlpha(-252121089, 0.4F), withAlpha(-648484865, 0.48F));
+         drawOrbitingRunes(matrix, mainCx, mainCy, 39.0F, time, 12);
+         drawRing(matrix, minorCx, minorCy, 22.0F, 0.9F, withAlpha(-648484865, 0.36F), -time * 0.65F, 30, 0);
+         drawRotatingHexagram(matrix, minorCx, minorCy, 17.0F, -time * 1.05F, 0.95F, withAlpha(-640598785, 0.55F), withAlpha(-648484865, 0.38F));
+         drawOblivionCrown(matrix, x + width * 0.5F, y + 63.0F, width * 0.34F, time);
+         drawCausalityThreads(matrix, x, y, width, height, time);
+      } finally {
+         endQuadBatch();
+      }
    }
 
    private static void renderContent(
@@ -439,6 +463,7 @@ public final class TerminusTooltipRenderer {
       List<FormattedCharSequence> enchantmentLines,
       TerminusTooltipRenderer.BladeStats bladeStats,
       List<String> activeEffects,
+      int columns,
       int x,
       int y,
       int width,
@@ -446,6 +471,8 @@ public final class TerminusTooltipRenderer {
       float time
    ) {
       int center = x + width / 2;
+      int contentWidth = width - 24;
+      graphics.enableScissor(x + 4, y + 4, x + width - 4, y + height - 11);
       Component title = vanillaLines.isEmpty() ? stack.getHoverName() : vanillaLines.get(0);
       drawGlowText(graphics, font, title, center - font.width(title) / 2, y + 10, -252121089, -640598785);
       graphics.drawCenteredString(
@@ -453,27 +480,22 @@ public final class TerminusTooltipRenderer {
       );
       graphics.renderItem(stack, x + 12, y + 13);
       int infoY = y + 86;
-      drawTag(graphics, font, x + 12, infoY, "SA", Component.translatable("slash_art.annihilationblade.spatial_fracture"), -1723133073, -648484865);
-      drawTag(graphics, font, x + 12, infoY + 15, "AUTH", Component.translatable("item.annihilationblade.passive"), -1721877998, -385887379);
-      drawTag(graphics, font, x + 12, infoY + 30, "DMG", Component.translatable("item.annihilationblade.infinite_damage"), -1723594168, -640598785);
+      drawTag(graphics, font, x + 12, infoY, contentWidth, "SA", Component.translatable("slash_art.annihilationblade.spatial_fracture"), -1723133073, -648484865);
+      drawTag(graphics, font, x + 12, infoY + 15, contentWidth, "AUTH", Component.translatable("item.annihilationblade.passive"), -1721877998, -385887379);
+      drawTag(graphics, font, x + 12, infoY + 30, contentWidth, "DMG", Component.translatable("item.annihilationblade.infinite_damage"), -1723594168, -640598785);
       int statsY = infoY + 45;
-      drawBladeStats(graphics, font, x + 12, statsY, width - 24, bladeStats, time);
+      drawBladeStats(graphics, font, x + 12, statsY, contentWidth, bladeStats, time);
       int chipY = statsY + 30;
       int seCount = activeEffects.size();
-      int columns = Math.max(1, (width - 24) / 84);
-      if (seCount > 0 && seCount < columns) {
-         columns = seCount;
-      }
-
       int rows = seCount == 0 ? 0 : (seCount + columns - 1) / columns;
       int rowHeight = 16;
-      int chipWidth = seCount == 0 ? 0 : (width - 24 - (columns - 1) * 4) / columns;
+      int chipWidth = seCount == 0 ? 0 : (contentWidth - (columns - 1) * CHIP_GAP) / columns;
       int totalChipHeight = seCount > 0 ? rows * rowHeight - 4 : 0;
 
       for (int i = 0; i < seCount; i++) {
          int col = i % columns;
          int row = i / columns;
-         int chipX = x + 12 + col * (chipWidth + 4);
+         int chipX = x + 12 + col * (chipWidth + CHIP_GAP);
          int currentChipY = chipY + row * rowHeight;
          int color = EFFECT_COLOR_POOL[i % EFFECT_COLOR_POOL.length];
          float phaseOffset = (float)(i * 2.399F % (Math.PI * 2)) + noise(i * 17.3F) * 2.0F;
@@ -481,7 +503,7 @@ public final class TerminusTooltipRenderer {
       }
 
       int enchantY = chipY + totalChipHeight + (seCount > 0 ? 10 : 0);
-      int enchantmentHeight = drawEnchantments(graphics, font, x + 12, enchantY, width - 24, enchantmentLines);
+      int enchantmentHeight = drawEnchantments(graphics, font, x + 12, enchantY, contentWidth, enchantmentLines);
       int descY = enchantY + (enchantmentHeight == 0 ? 4 : enchantmentHeight + 7);
       graphics.fill(x + 12, descY - 5, x + width - 12, descY - 4, 1430129522);
 
@@ -489,6 +511,7 @@ public final class TerminusTooltipRenderer {
          graphics.drawString(font, line, x + 13, descY, -1463306018, false);
          descY += 10;
       }
+      graphics.disableScissor();
 
       int pulse = (int)((width - 26) * (0.45F + 0.55F * (0.5F + 0.5F * Mth.sin(time * 3.4F))));
       graphics.fill(x + 13, y + height - 8, x + width - 13, y + height - 7, 1144916850);
@@ -498,10 +521,10 @@ public final class TerminusTooltipRenderer {
    private static void drawBladeStats(GuiGraphics graphics, Font font, int x, int y, int width, TerminusTooltipRenderer.BladeStats stats, float time) {
       int gap = 5;
       int cellWidth = (width - gap * 2) / 3;
-      drawStatCell(graphics, font, x, y, cellWidth, "\u6740\u654c", formatNumber(stats.killCount()), -648484865, time);
-      drawStatCell(graphics, font, x + cellWidth + gap, y, cellWidth, "\u8000\u9b42", formatNumber(stats.proudSoul()), -385887379, time + 0.7F);
+      drawStatCell(graphics, font, x, y, cellWidth, Component.translatable("item.annihilationblade.tooltip.stat.kills").getString(), formatNumber(stats.killCount()), -648484865, time);
+      drawStatCell(graphics, font, x + cellWidth + gap, y, cellWidth, Component.translatable("item.annihilationblade.tooltip.stat.souls").getString(), formatNumber(stats.proudSoul()), -385887379, time + 0.7F);
       drawStatCell(
-         graphics, font, x + (cellWidth + gap) * 2, y, width - (cellWidth + gap) * 2, "\u7cbe\u70bc", formatNumber(stats.refine()), -640598785, time + 1.4F
+         graphics, font, x + (cellWidth + gap) * 2, y, width - (cellWidth + gap) * 2, Component.translatable("item.annihilationblade.tooltip.stat.refine").getString(), formatNumber(stats.refine()), -640598785, time + 1.4F
       );
    }
 
@@ -510,7 +533,7 @@ public final class TerminusTooltipRenderer {
       graphics.fill(x, y, x + width, y + 1, withAlpha(accent, 0.7F));
       int pulseWidth = 4 + (int)((width - 8) * (0.45F + 0.55F * (0.5F + 0.5F * Mth.sin(phase * 2.4F))));
       graphics.fill(x + 2, y + 17, x + Math.min(width - 2, pulseWidth), y + 18, withAlpha(accent, 0.72F));
-      graphics.drawString(font, label, x + 4, y + 3, -4676152, false);
+      graphics.drawString(font, ellipsize(font, label, width - 8), x + 4, y + 3, -4676152, false);
       graphics.drawString(font, value, x + width - font.width(value) - 4, y + 10, -726529, false);
    }
 
@@ -523,7 +546,7 @@ public final class TerminusTooltipRenderer {
       graphics.fill(x, y, x + width, y + height, 1746274850);
       graphics.fill(x, y, x + width, y + 1, -1996500115);
       graphics.fill(x, y + height - 1, x + width, y + height, 1717102591);
-      graphics.drawString(font, "\u9644\u9b54\u56de\u8def", x + 5, y + 3, -385887379, false);
+      graphics.drawString(font, Component.translatable("item.annihilationblade.tooltip.section.enchantments"), x + 5, y + 3, -385887379, false);
       int lineY = y + 14;
 
       for (FormattedCharSequence line : enchantmentLines) {
@@ -534,11 +557,16 @@ public final class TerminusTooltipRenderer {
       return height;
    }
 
-   private static void drawTag(GuiGraphics graphics, Font font, int x, int y, String label, Component value, int background, int accent) {
+   private static void drawTag(GuiGraphics graphics, Font font, int x, int y, int rowWidth, String label, Component value, int background, int accent) {
       graphics.fill(x, y, x + 30, y + 11, background);
       graphics.fill(x, y, x + 2, y + 11, accent);
       graphics.drawString(font, label, x + 5, y + 2, -1253889, false);
-      graphics.drawString(font, value, x + 36, y + 1, -2504214, true);
+      int maxValueWidth = Math.max(24, rowWidth - 36);
+      if (font.width(value) <= maxValueWidth) {
+         graphics.drawString(font, value, x + 36, y + 1, -2504214, true);
+      } else {
+         graphics.drawString(font, ellipsize(font, value.getString(), maxValueWidth), x + 36, y + 1, -2504214, true);
+      }
    }
 
    private static void drawSpecialEffectChip(GuiGraphics graphics, Font font, int x, int y, int width, Component text, int color, float phase) {
@@ -550,7 +578,23 @@ public final class TerminusTooltipRenderer {
       float finalPulse = Mth.clamp(mainPulse + microPulse, 0.0F, 1.0F);
       int fill = 2 + (int)((width - 4) * finalPulse);
       graphics.fill(x + 2, y + 9, x + Math.min(width - 2, fill), y + 10, withAlpha(color, 0.78F));
-      graphics.drawString(font, text, x + 5, y + 2, -1187073, false);
+      int maxTextWidth = Math.max(16, width - 8);
+      if (font.width(text) <= maxTextWidth) {
+         graphics.drawString(font, text, x + 5, y + 2, -1187073, false);
+      } else {
+         graphics.drawString(font, ellipsize(font, text.getString(), maxTextWidth), x + 5, y + 2, -1187073, false);
+      }
+   }
+
+   private static String ellipsize(Font font, String raw, int maxWidth) {
+      if (maxWidth <= 0 || font.width(raw) <= maxWidth) {
+         return raw;
+      }
+      int ellipsisWidth = font.width("...");
+      if (maxWidth <= ellipsisWidth) {
+         return font.plainSubstrByWidth(raw, maxWidth);
+      }
+      return font.plainSubstrByWidth(raw, maxWidth - ellipsisWidth) + "...";
    }
 
    private static void drawGlowText(GuiGraphics graphics, Font font, Component text, int x, int y, int color, int glow) {
@@ -660,9 +704,53 @@ public final class TerminusTooltipRenderer {
       drawQuad(matrix, x1, y1, x2, y1, x2, y2, x1, y2, color, color, color, color);
    }
 
+   private static BufferBuilder activeQuadBatch = null;
+   private static boolean activeQuadBatchHasVertices = false;
+
+   private static void beginQuadBatch() {
+      if (activeQuadBatch != null) {
+         return;
+      }
+      BufferBuilder builder = Tesselator.getInstance().getBuilder();
+      builder.begin(Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+      activeQuadBatch = builder;
+      activeQuadBatchHasVertices = false;
+   }
+
+   private static void endQuadBatch() {
+      BufferBuilder builder = activeQuadBatch;
+      if (builder == null) {
+         return;
+      }
+      activeQuadBatch = null;
+      boolean hasVertices = activeQuadBatchHasVertices;
+      activeQuadBatchHasVertices = false;
+      if (!hasVertices) {
+         if (builder.building()) {
+            builder.discard();
+         }
+         return;
+      }
+      RenderSystem.enableBlend();
+      RenderSystem.defaultBlendFunc();
+      RenderSystem.disableDepthTest();
+      RenderSystem.setShader(GameRenderer::getPositionColorShader);
+      BufferUploader.drawWithShader(builder.end());
+      RenderSystem.enableDepthTest();
+      RenderSystem.disableBlend();
+   }
+
    private static void drawQuad(
       Matrix4f matrix, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, int color1, int color2, int color3, int color4
    ) {
+      if (activeQuadBatch != null) {
+         vertex(activeQuadBatch, matrix, x1, y1, color1);
+         vertex(activeQuadBatch, matrix, x2, y2, color2);
+         vertex(activeQuadBatch, matrix, x3, y3, color3);
+         vertex(activeQuadBatch, matrix, x4, y4, color4);
+         activeQuadBatchHasVertices = true;
+         return;
+      }
       RenderSystem.enableBlend();
       RenderSystem.defaultBlendFunc();
       RenderSystem.disableDepthTest();
@@ -679,18 +767,8 @@ public final class TerminusTooltipRenderer {
    }
 
    private static void drawTriangle(Matrix4f matrix, float x1, float y1, float x2, float y2, float x3, float y3, int color) {
-      RenderSystem.enableBlend();
-      RenderSystem.defaultBlendFunc();
-      RenderSystem.disableDepthTest();
-      RenderSystem.setShader(GameRenderer::getPositionColorShader);
-      BufferBuilder builder = Tesselator.getInstance().getBuilder();
-      builder.begin(Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
-      vertex(builder, matrix, x1, y1, color);
-      vertex(builder, matrix, x2, y2, color);
-      vertex(builder, matrix, x3, y3, color);
-      BufferUploader.drawWithShader(builder.end());
-      RenderSystem.enableDepthTest();
-      RenderSystem.disableBlend();
+      // 复用退化四边形走 Quad 合批，消除单帧高频独立 Draw Call
+      drawQuad(matrix, x1, y1, x2, y2, x3, y3, x3, y3, color, color, color, color);
    }
 
    private static void vertex(BufferBuilder builder, Matrix4f matrix, float x, float y, int color) {
@@ -740,7 +818,7 @@ public final class TerminusTooltipRenderer {
    }
 
    private static boolean isBladeAsset(String value) {
-      return value != null && value.startsWith("annihilationblade:model/blade");
+      return value != null && (value.startsWith("annihilationblade:model/annihilation_blade") || value.startsWith("annihilationblade:model/blade"));
    }
 
    private static int withAlpha(int color, float alpha) {

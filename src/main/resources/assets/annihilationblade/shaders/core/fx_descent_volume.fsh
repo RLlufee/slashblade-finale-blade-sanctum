@@ -65,7 +65,7 @@ void main() {
                 if (vertical < 0.02 || r > radius) {
                     continue;
                 }
-                float angle = atan(p.z, p.x);
+                float angle = fxSafeAtan(p.z, p.x);
                 float arms = 0.5 + 0.5 * sin(angle * 3.0 + log(r + 1.0) * 6.0 - FxTime * Vortex.z);
                 arms = smoothstep(0.35, 1.0, arms);
                 float noise = 0.6 + 0.4 * fxNoise3(p * 0.25 + vec3(0.0, FxTime * 0.5, 0.0));
@@ -87,14 +87,16 @@ void main() {
     }
     float flashRadius = max(Shock.z, 0.5) * 8.0;
     if (Shock.w > 0.0 && tc > 0.0 && tc - flashRadius < sceneT) {
-        acc += vec3(1.0, 0.9, 0.75) * exp(-pow(dStar / flashRadius, 2.0)) * Shock.w * 3.5;
+        float qFlash = dStar / flashRadius;
+        acc += vec3(1.0, 0.9, 0.75) * exp(-(qFlash * qFlash)) * Shock.w * 3.5;
     }
 
     // 4. 冲击波光边
     if (Shock.y > 0.0 && tc > 0.0) {
         float frontT = tc - sqrt(max(Shock.x * Shock.x - dStar * dStar, 0.0));
         if (frontT < sceneT) {
-            acc += mix(GOLD, VIOLET, 0.35) * exp(-pow((dStar - Shock.x) / max(Shock.z, 0.1), 2.0)) * Shock.y * 1.8;
+            float qShock = (dStar - Shock.x) / max(Shock.z, 0.1);
+            acc += mix(GOLD, VIOLET, 0.35) * exp(-(qShock * qShock)) * Shock.y * 1.8;
         }
     }
 
