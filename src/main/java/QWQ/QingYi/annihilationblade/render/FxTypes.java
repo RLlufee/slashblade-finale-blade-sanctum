@@ -8,7 +8,10 @@ package QWQ.QingYi.annihilationblade.render;
 public final class FxTypes {
    /** 湮灭之刃 SA「空间破碎」。 */
    public static final int SPATIAL_FRACTURE = 1;
-   /** 无尽星空 SA「真空衰变·坍缩」（持续特效）。 */
+   /**
+    * 旧版无尽星空 SA「真空衰变·坍缩」（遗留过渡编号；Step 7 切换至 {@link #STELLARIS_VACUUM_COLLAPSE} 后留空不复用）。
+    */
+   @Deprecated
    public static final int VACUUM_DECAY = 2;
    /** 魔龙夜陨 SA「神陨·宇宙夜陨降临」（持续特效）。 */
    public static final int COSMIC_DESCENT = 3;
@@ -74,6 +77,22 @@ public final class FxTypes {
     * scale = 视觉倍率，entityIds = 当前剩余目标，targetTicks 与 entityIds 按索引对应其波前处决 tick。
     */
    public static final int VOID_DOMINION = 19;
+   /** 无尽星空 SE「熵增蚀解」叠层全息标尺与温度读数（池化实例，Step 4 接入星穹引擎）。 */
+   public static final int STELLARIS_ENTROPY_STACK = 20;
+   /** 无尽星空 SE「熵增蚀解」满层热寂归零与 Voronoi 晶化瓦解（一次性，Step 4 接入星穹引擎）。 */
+   public static final int STELLARIS_HEAT_DEATH = 21;
+   /** 无尽星空 SE「宇宙弦切」驻波弦网与锥形亏角双像折射（一次性，Step 4 接入星穹引擎）。 */
+   public static final int STELLARIS_STRING_CUT = 22;
+   /** 无尽星空 SE「伽马霆爆」天基轨道炮预警与贯地实心光柱（一次性，Step 5 接入星穹引擎）。 */
+   public static final int STELLARIS_GAMMA_BURST = 23;
+   /** 无尽星空 SE「曲率撕裂」阿库别瑞泡与双层重力漏斗领域（持续特效，Step 6 接入星穹引擎）。 */
+   public static final int STELLARIS_CURVATURE_DOMAIN = 24;
+   /** 无尽星空 SE「曲率撕裂」满层度规坍缩与解析引力透镜虫洞（一次性，Step 6 接入星穹引擎）。 */
+   public static final int STELLARIS_CURVATURE_COLLAPSE = 25;
+   /** 无尽星空背后常驻「浑天仪 × 极星观测翼」（纯客户端保留槽位，Step 3 接入星穹引擎）。 */
+   public static final int STELLARIS_ARMILLARY_PRESENCE = 26;
+   /** 无尽星空 SA「真空衰变·坍缩」新版 184 tick 七幕天灾与测地线黑洞（持续特效，Step 7 接入星穹引擎）。 */
+   public static final int STELLARIS_VACUUM_COLLAPSE = 27;
 
    private FxTypes() {
    }

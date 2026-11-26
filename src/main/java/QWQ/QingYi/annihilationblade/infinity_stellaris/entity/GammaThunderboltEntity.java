@@ -44,9 +44,9 @@ public class GammaThunderboltEntity extends Entity {
                this.getZ(),
                SoundEvents.LIGHTNING_BOLT_THUNDER,
                SoundSource.WEATHER,
-               10000.0F,
+               3.5F,
                0.8F + this.random.nextFloat() * 0.2F,
-               false
+               true
             );
          this.level()
             .playLocalSound(
@@ -79,7 +79,7 @@ public class GammaThunderboltEntity extends Entity {
 
    @Override
    public boolean shouldRenderAtSqrDistance(double distance) {
-      double viewDistance = 64.0D * getViewScale();
+      double viewDistance = 160.0D * getViewScale();
       return distance < viewDistance * viewDistance;
    }
 

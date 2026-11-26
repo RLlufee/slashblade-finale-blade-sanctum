@@ -10,19 +10,24 @@ import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.PhantomJudg
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.TerminusEcho;
 import QWQ.QingYi.annihilationblade.annihilation_blade.specialeffect.VoidDominion;
 import QWQ.QingYi.annihilationblade.blood_prison.logic.BloodPrisonLogic;
+import QWQ.QingYi.annihilationblade.common.BladeFlightManager;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
+import QWQ.QingYi.annihilationblade.common.VoidRescueSupport;
+import QWQ.QingYi.annihilationblade.infinity_stellaris.logic.CosmicStringCutLogic;
+import QWQ.QingYi.annihilationblade.infinity_stellaris.logic.CurvatureRuptureLogic;
+import QWQ.QingYi.annihilationblade.infinity_stellaris.logic.EntropyDissolutionLogic;
+import QWQ.QingYi.annihilationblade.infinity_stellaris.logic.GammaThunderburstLogic;
+import QWQ.QingYi.annihilationblade.infinity_stellaris.logic.VacuumDecayCollapseLogic;
 import QWQ.QingYi.annihilationblade.registry.ModSpecialEffects;
 import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
 import mods.flammpfeil.slashblade.item.ItemSlashBlade;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.Mth;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -50,7 +55,7 @@ import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 public class ModEventHandler {
    private static final int INVENTORY_SCAN_INTERVAL = 10;
    private static final int BLADE_REFRESH_INTERVAL = 20;
-   private static final Set<UUID> PLAYERS_WITH_FLIGHT = new HashSet<>();
+   private static final String FLIGHT_TOKEN = "annihilation_blade";
    private static final Map<UUID, Boolean> HAS_BLADE_CACHE = new HashMap<>();
    private static final Map<UUID, Integer> LAST_BLADE_SCAN_TICK = new HashMap<>();
 
@@ -193,7 +198,12 @@ public class ModEventHandler {
          return;
       }
 
-      if (BloodPrisonLogic.isPhantomBurstDamage(event.getEntity())) {
+      if (BloodPrisonLogic.isPhantomBurstDamage(event.getEntity())
+            || EntropyDissolutionLogic.isInternalExecution(event.getEntity())
+            || CosmicStringCutLogic.isInternalDamage(event.getEntity())
+            || GammaThunderburstLogic.isInternalDamage(event.getEntity())
+            || CurvatureRuptureLogic.isInternalDamage(event.getEntity())
+            || VacuumDecayCollapseLogic.isInternalDamage(event.getEntity())) {
          return;
       }
 
@@ -274,27 +284,10 @@ public class ModEventHandler {
 
                player.getFoodData().setFoodLevel(20);
                player.getFoodData().setSaturation(20.0F);
-               if (!player.isCreative() && !player.isSpectator() && !player.getAbilities().mayfly) {
-                  player.getAbilities().mayfly = true;
-                  PLAYERS_WITH_FLIGHT.add(key);
-                  player.onUpdateAbilities();
-               }
-
-               int minBuildY = player.level().getMinBuildHeight();
-               if (player.getY() < (double)minBuildY) {
-                  double targetY = resolveVoidRescueY(player);
-                  player.teleportTo(player.getX(), targetY, player.getZ());
-                  player.setDeltaMovement(0.0, 0.0, 0.0);
-                  if (!player.getAbilities().flying) {
-                     player.getAbilities().flying = true;
-                     player.onUpdateAbilities();
-                  }
-               }
-            } else if (!player.isCreative() && !player.isSpectator() && player.getAbilities().mayfly && PLAYERS_WITH_FLIGHT.contains(key)) {
-               player.getAbilities().mayfly = false;
-               player.getAbilities().flying = false;
-               PLAYERS_WITH_FLIGHT.remove(key);
-               player.onUpdateAbilities();
+               BladeFlightManager.syncToken(player, FLIGHT_TOKEN, true);
+               VoidRescueSupport.rescueIfInVoid(player);
+            } else {
+               BladeFlightManager.syncToken(player, FLIGHT_TOKEN, false);
             }
          }
       }
@@ -316,7 +309,6 @@ public class ModEventHandler {
       UUID id = event.getEntity().getUUID();
       HAS_BLADE_CACHE.remove(id);
       LAST_BLADE_SCAN_TICK.remove(id);
-      PLAYERS_WITH_FLIGHT.remove(id);
    }
 
    @SubscribeEvent
@@ -324,51 +316,16 @@ public class ModEventHandler {
       UUID id = event.getEntity().getUUID();
       HAS_BLADE_CACHE.remove(id);
       LAST_BLADE_SCAN_TICK.remove(id);
-      PLAYERS_WITH_FLIGHT.remove(id);
    }
 
    @SubscribeEvent
    public static void onServerStopping(net.minecraftforge.event.server.ServerStoppingEvent event) {
-      PLAYERS_WITH_FLIGHT.clear();
       HAS_BLADE_CACHE.clear();
       LAST_BLADE_SCAN_TICK.clear();
    }
 
-   /**
-    * 适配不同维度高度的虚空救助落点：
-    * 下界等带基岩顶盖维度优先在顶盖下方寻找安全空腔，避免把玩家传到基岩顶层 Y=320；
-    * 主世界/末地等无顶盖维度直接送回当前维度最高建筑高度。
-    */
-   private static double resolveVoidRescueY(Player player) {
-      net.minecraft.world.level.Level level = player.level();
-      if (!level.dimensionType().hasCeiling()) {
-         return level.getMaxBuildHeight();
-      }
-      int minY = level.getMinBuildHeight() + 8;
-      int maxSafeY = Math.max(minY, level.dimensionType().logicalHeight() - 12);
-      int preferredY = Math.min(maxSafeY, Math.max(minY, level.getMinBuildHeight() + 64));
-      net.minecraft.core.BlockPos base = net.minecraft.core.BlockPos.containing(player.getX(), preferredY, player.getZ());
-      for (int offset = 0; offset <= maxSafeY - minY; offset++) {
-         int up = preferredY + offset;
-         if (up <= maxSafeY && isAirHeadroom(level, base.atY(up))) {
-            return up;
-         }
-         int down = preferredY - offset;
-         if (offset > 0 && down >= minY && isAirHeadroom(level, base.atY(down))) {
-            return down;
-         }
-      }
-      return preferredY;
-   }
-
-   private static boolean isAirHeadroom(net.minecraft.world.level.Level level, net.minecraft.core.BlockPos feet) {
-      return level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
-         && level.getBlockState(feet.above()).getCollisionShape(level, feet.above()).isEmpty();
-   }
-
    private static void clearPlayerState(Player player) {
       UUID id = player.getUUID();
-      PLAYERS_WITH_FLIGHT.remove(id);
       HAS_BLADE_CACHE.remove(id);
       LAST_BLADE_SCAN_TICK.remove(id);
       AnnihilationInputRouter.clearPlayer(id);

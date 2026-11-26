@@ -1,5 +1,7 @@
 package QWQ.QingYi.annihilationblade.loli_blade.logic;
 
+import QWQ.QingYi.annihilationblade.common.BladeFlightManager;
+import QWQ.QingYi.annihilationblade.common.VoidRescueSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
 import QWQ.QingYi.annihilationblade.loli_blade.LoliBladeDefinitions;
 import QWQ.QingYi.annihilationblade.loli_blade.LoliBladeProtectionManager;
@@ -22,7 +24,7 @@ import net.minecraftforge.event.entity.living.LivingHurtEvent;
 
 /** 萝莉刀持有者的服务器防御、飞行和虚空保护。 */
 public final class LoliBladeDefenseLogic {
-   private static final Set<UUID> GRANTED_FLIGHT = new HashSet<>();
+   private static final String FLIGHT_TOKEN = "loli_blade";
    private static final Set<UUID> GRANTED_INVULNERABILITY = new HashSet<>();
    private static final Set<UUID> ACTIVE_REFLECTIONS = new HashSet<>();
 
@@ -108,42 +110,40 @@ public final class LoliBladeDefenseLogic {
       player.resetFallDistance();
       removeHarmfulEffects(player);
 
-      if (!player.isCreative() && !player.isSpectator()) {
-         if (config.grantFlight.getValue() && !player.getAbilities().mayfly) {
-            player.getAbilities().mayfly = true;
-            GRANTED_FLIGHT.add(player.getUUID());
-            player.onUpdateAbilities();
-         }
+      BladeFlightManager.syncToken(player, FLIGHT_TOKEN, config.grantFlight.getValue());
 
-         if (!player.getAbilities().invulnerable) {
-            player.getAbilities().invulnerable = true;
-            GRANTED_INVULNERABILITY.add(player.getUUID());
-            player.onUpdateAbilities();
-         }
+      if (!player.isCreative() && !player.isSpectator() && !player.getAbilities().invulnerable) {
+         player.getAbilities().invulnerable = true;
+         GRANTED_INVULNERABILITY.add(player.getUUID());
+         player.onUpdateAbilities();
       }
 
-      if (config.voidProtection.getValue() && player.getY() < player.level().getMinBuildHeight()) {
-         double safeY = player.level().getMaxBuildHeight() - 2.0D;
-         player.teleportTo(player.getX(), safeY, player.getZ());
-         player.setDeltaMovement(0.0D, 0.0D, 0.0D);
-         player.resetFallDistance();
+      if (config.voidProtection.getValue()) {
+         VoidRescueSupport.rescueIfInVoid(player);
       }
    }
 
    public static void clearPlayerState(Player player) {
+      clearPlayerState(player, true);
+   }
+
+   /** 跨维度切换时不主动撤回共享飞行，避免过传送门高空断飞。 */
+   public static void onPlayerChangedDimension(Player player) {
+      clearPlayerState(player, false);
+   }
+
+   private static void clearPlayerState(Player player, boolean releaseFlight) {
       UUID id = player.getUUID();
       LoliBladeProtectionManager.unmark(id);
+      if (releaseFlight) {
+         BladeFlightManager.syncToken(player, FLIGHT_TOKEN, false);
+      }
       if (!player.isCreative() && !player.isSpectator()) {
-         if (GRANTED_FLIGHT.remove(id)) {
-            player.getAbilities().mayfly = false;
-            player.getAbilities().flying = false;
-         }
          if (GRANTED_INVULNERABILITY.remove(id)) {
             player.getAbilities().invulnerable = false;
+            player.onUpdateAbilities();
          }
-         player.onUpdateAbilities();
       } else {
-         GRANTED_FLIGHT.remove(id);
          GRANTED_INVULNERABILITY.remove(id);
       }
    }
@@ -198,20 +198,14 @@ public final class LoliBladeDefenseLogic {
    }
 
    private static void revokeAbilities(Player player) {
+      BladeFlightManager.syncToken(player, FLIGHT_TOKEN, false);
       if (!player.isCreative() && !player.isSpectator()) {
-         boolean changed = false;
-         if (GRANTED_FLIGHT.remove(player.getUUID())) {
-            player.getAbilities().mayfly = false;
-            player.getAbilities().flying = false;
-            changed = true;
-         }
          if (GRANTED_INVULNERABILITY.remove(player.getUUID())) {
             player.getAbilities().invulnerable = false;
-            changed = true;
-         }
-         if (changed) {
             player.onUpdateAbilities();
          }
+      } else {
+         GRANTED_INVULNERABILITY.remove(player.getUUID());
       }
    }
 }

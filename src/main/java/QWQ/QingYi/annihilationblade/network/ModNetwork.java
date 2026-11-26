@@ -27,9 +27,10 @@ public final class ModNetwork {
     * 14：移除已废弃的 STARLESS_JUDGEMENT（16）特效事件与 fx_starless_scene 着色器；
     * 15：因果坍缩槽位 14 新增 mode=3（CAUSALITY_MODE_DEVOUR）裂隙核心吞噬绞杀同步包（支持客户端 3D 躯壳潮汐撕裂吸入演出）；
     * 16：新增断空位移开关 S2C 权威回执包（DankongBlinkModeSyncPacket），并扩容裂界神威 intParam 跳序号/最大链长位宽至 7-bit（0..127）。
+    * 17：无尽星空 Step 0 公共底座重构——移除高危 C 键包 InfinityStellarisAiRestorePacket，新增曲率撕裂 S2C 权威回执包 CurvatureRuptureSyncPacket，预留 FxTypes 20..27 星穹引擎编号。
     * 新旧版本客户端/服务端互相拒绝连接，避免解析错乱或特效缺失。
     */
-   private static final String PROTOCOL_VERSION = "16";
+   private static final String PROTOCOL_VERSION = "17";
    private static int messageId;
    public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
       ResourceLocation.fromNamespaceAndPath("annihilationblade", "main"), () -> PROTOCOL_VERSION, PROTOCOL_VERSION::equals, PROTOCOL_VERSION::equals
@@ -65,11 +66,11 @@ public final class ModNetwork {
       );
       CHANNEL.registerMessage(
          messageId++,
-         InfinityStellarisAiRestorePacket.class,
-         InfinityStellarisAiRestorePacket::encode,
-         InfinityStellarisAiRestorePacket::decode,
-         InfinityStellarisAiRestorePacket::handle,
-         Optional.of(NetworkDirection.PLAY_TO_SERVER)
+         CurvatureRuptureSyncPacket.class,
+         CurvatureRuptureSyncPacket::encode,
+         CurvatureRuptureSyncPacket::decode,
+         CurvatureRuptureSyncPacket::handle,
+         Optional.of(NetworkDirection.PLAY_TO_CLIENT)
       );
       CHANNEL.registerMessage(
          messageId++,
@@ -111,5 +112,9 @@ public final class ModNetwork {
 
    public static void sendDankongBlinkModeSync(ServerPlayer player, boolean enabled, boolean showMessage) {
       CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new DankongBlinkModeSyncPacket(enabled, showMessage));
+   }
+
+   public static void sendCurvatureRuptureSync(ServerPlayer player, boolean enabled, boolean showMessage) {
+      CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new CurvatureRuptureSyncPacket(enabled, showMessage));
    }
 }

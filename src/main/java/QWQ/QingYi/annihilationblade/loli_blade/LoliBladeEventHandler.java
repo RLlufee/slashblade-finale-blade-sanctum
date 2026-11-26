@@ -63,7 +63,7 @@ public final class LoliBladeEventHandler {
 
    @SubscribeEvent
    public static void onPlayerChangedDimension(PlayerChangedDimensionEvent event) {
-      LoliBladeDefenseLogic.clearPlayerState(event.getEntity());
+      LoliBladeDefenseLogic.onPlayerChangedDimension(event.getEntity());
       LoliBladeCombatLogic.clearPlayerState(event.getEntity().getUUID());
    }
 }

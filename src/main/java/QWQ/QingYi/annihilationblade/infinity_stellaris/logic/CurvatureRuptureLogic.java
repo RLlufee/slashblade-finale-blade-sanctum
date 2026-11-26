@@ -1,411 +1,380 @@
 package QWQ.QingYi.annihilationblade.infinity_stellaris.logic;
 
+import QWQ.QingYi.annihilationblade.common.EntitySuspensionManager;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
+import QWQ.QingYi.annihilationblade.infinity_stellaris.InfinityStellarisDefinitions;
 import QWQ.QingYi.annihilationblade.infinity_stellaris.item.InfinityStellarisItemSupport;
+import QWQ.QingYi.annihilationblade.infinity_stellaris.visual.InfinityStellarisVisuals;
+import QWQ.QingYi.annihilationblade.network.ModNetwork;
+import QWQ.QingYi.annihilationblade.registry.ModSpecialEffects;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import net.minecraft.core.particles.ParticleTypes;
+import mods.flammpfeil.slashblade.capability.slashblade.ISlashBladeState;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.entity.Entity;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent.Phase;
 import net.minecraftforge.event.TickEvent.PlayerTickEvent;
+import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
 /**
- * 曲率撕裂与 AI 抹杀 (Curvature Rupture & AI Erasure) 核心逻辑类
- * 
- * 本类展示了控制周围生物行为、时空冻结与应力印记引爆的高级玩法：
- * 
- * 强行抹杀/封印生物 AI (setNoAi)：将范围内的 Mob 设置为 NoAI
- * 并清除寻路，实现“时间停止/时空冻结”的效果。
- * 多玩家并发所有权管理 (FrozenMobState)：记录生物原本的 NoAI 状态以及当前正在对其施压的所有玩家
- * UUID，防止多玩家同时施法导致 AI 恢复逻辑混乱。
- * 曲率应力印记 (Strain Marks) 叠加机制：在 Tick 循环中逐渐为目标增加应力印记，达到配置上限后触发“曲率撕裂爆破
- * (Curvature Burst)”。
- * 重置无敌帧 (invulnerableTime = 0)：破除目标的受击无敌保护，确保高频打击能立刻生效。
- * 
+ * SE 4 · 曲率撕裂（Curvature Rupture）服务端权威逻辑。
+ * <p>
+ * <ul>
+ *   <li>全面接入全局 {@link EntitySuspensionManager}（Token：{@code curvature_rupture:<ownerId>}），
+ *       离圈、关闭、切手、死亡、跨维、停服全部精确还原原始 {@code NoAi}/{@code NoGravity}，彻底根治永久木桩；</li>
+ *   <li>支持 SE 独立拆装至任意未破损/未封印拔刀剑；</li>
+ *   <li>收敛为单键 {@code I} + S2C 权威回执同步，杜绝双端反相；移除每 2 tick 72 粒子炸服粒子海；</li>
+ *   <li>满应力层数触发度规撕裂坍缩：剥离增益与吸收盾、清无敌帧、向心捏压、高额曲率震荡伤害 + 叠 2 层熵增印记。</li>
+ * </ul>
  */
 @EventBusSubscriber(modid = "annihilationblade")
 public final class CurvatureRuptureLogic {
-   /** 记录每个玩家是否开启了“AI 抹杀/曲率气场”的开关映射 */
-   private static final Map<UUID, Boolean> AI_ERASURE_ENABLED = new HashMap<>();
-
-   /** 记录被冻结生物 UUID 到其冻结前原始状态 (FrozenMobState) 的映射 */
-   private static final Map<UUID, FrozenMobState> FROZEN_MOBS = new HashMap<>();
-
-   /** 记录每一个玩家 (Player UUID) 对每一个目标 (Target UUID) 施加的曲率应力印记层数 */
+   private static final Map<UUID, Boolean> DOMAIN_ENABLED = new HashMap<>();
+   private static final Map<UUID, Set<UUID>> HELD_TARGETS = new HashMap<>();
    private static final Map<UUID, Map<UUID, Integer>> STRAIN_MARKS = new HashMap<>();
-
-   /** 记录禁止自动恢复 AI 的玩家集合 */
-   private static final Set<UUID> AI_RESTORE_DISABLED = new HashSet<>();
+   private static final Set<UUID> INTERNAL_DAMAGE = new HashSet<>();
 
    private CurvatureRuptureLogic() {
    }
 
-   /**
-    * 玩家 Tick 监听器（服务端、Phase.END 阶段执行）。
-    * 只要玩家手持无尽星空刀并开启了曲率气场，就会持续抹除周围敌对生物的 AI。
-    */
+   public static boolean isInternalDamage(LivingEntity target) {
+      return target != null && INTERNAL_DAMAGE.contains(target.getUUID());
+   }
+
    @SubscribeEvent
    public static void onPlayerTick(PlayerTickEvent event) {
-      // 必须在 Tick 结束阶段且为服务端环境
       if (event.phase != Phase.END || event.player.level().isClientSide) {
          return;
       }
-
-      Player player = event.player;
-      if (!(player.level() instanceof ServerLevel level)) {
+      if (!(event.player instanceof ServerPlayer player) || !(player.level() instanceof ServerLevel level)) {
          return;
       }
 
-      // 如果未手持无尽星空，强制关闭 AI 抹杀气场并释放被冻结生物
-      if (!InfinityStellarisItemSupport.isHoldingInfinityStellaris(player)) {
-         setAiErasureEnabled(player, false);
-         releasePlayer(player);
-         return;
-      }
+      ModConfig.CurvatureRuptureConfig config = ModConfig.COMMON.infinityStellaris.curvatureRupture;
+      Optional<ISlashBladeState> heldState = config.enabled.getValue()
+         ? InfinityStellarisItemSupport.findHeldActiveSpecialEffect(player, ModSpecialEffects.CURVATURE_RUPTURE.getId())
+         : Optional.empty();
 
-      // 根据开关决定冻结周围生物还是释放它们
-      if (isAiErasureEnabled(player)) {
-         freezeNearby(level, player);
-      } else {
-         releasePlayer(player);
-      }
-   }
-
-   /**
-    * 查询玩家当前是否开启了 AI 抹杀气场。
-    */
-   public static boolean isAiErasureEnabled(Player player) {
-      return AI_ERASURE_ENABLED.getOrDefault(player.getUUID(), false);
-   }
-
-   /**
-    * 切换玩家的 AI 抹杀气场开关。
-    */
-   public static void setAiErasureEnabled(Player player, boolean enabled) {
-      UUID playerId = player.getUUID();
-      if (enabled) {
-         AI_ERASURE_ENABLED.put(playerId, true);
-      } else {
-         AI_ERASURE_ENABLED.remove(playerId);
-         releasePlayer(player); // 关闭时释放所有被该玩家冻结的目标
-      }
-   }
-
-   public static boolean isAiRestoreEnabled(Player player) {
-      return !AI_RESTORE_DISABLED.contains(player.getUUID());
-   }
-
-   public static void setAiRestoreEnabled(Player player, boolean enabled) {
-      UUID playerId = player.getUUID();
-      if (enabled) {
-         AI_RESTORE_DISABLED.remove(playerId);
-         restorePendingMobs(player);
-      } else {
-         AI_RESTORE_DISABLED.add(playerId);
-      }
-   }
-
-   /**
-    * 清理玩家数据（例如玩家离线或切换武器时调用）。
-    */
-   public static void clearPlayer(Player player) {
-      UUID playerId = player.getUUID();
-      AI_ERASURE_ENABLED.remove(playerId);
-      STRAIN_MARKS.remove(playerId);
-      releasePlayer(player);
-      AI_RESTORE_DISABLED.remove(playerId);
-   }
-
-   /**
-    * 搜索玩家周身的敌对生物并执行冻结与曲率应力叠加。
-    */
-   private static void freezeNearby(ServerLevel level, Player player) {
-      ModConfig.InfinityStellaris config = ModConfig.COMMON.infinityStellaris;
-
-      // 以玩家坐标为中心，在半径 curvatureRadius 范围内寻找可攻击目标，并限制最大目标数量
-      List<LivingEntity> targets = SpecialEffectSupport.limit(
-            SpecialEffectSupport.radialTargets(
-                  level, player, player.position(), config.curvatureRadius.getValue(),
-                  entity -> SlashBladeTargeting.canAttack(player, entity)),
-            config.curvatureMaxTargets.getValue());
-
-      long gameTime = level.getGameTime();
-      // 判断当前 Tick 是否需要更新应力印记
-      boolean strainTick = gameTime % Math.max(1, config.curvatureTickInterval.getValue()) == 0L;
-      Set<UUID> strainedTargets = new HashSet<>();
-
-      for (LivingEntity target : targets) {
-         if (target instanceof Mob mob) {
-            freezeMob(mob, player); // 带有 AI 的常规 Mob：剥夺 AI 与寻路
+      if (heldState.isEmpty()) {
+         if (isAiErasureEnabled(player)) {
+            disableAndSync(player, false);
          } else {
-            freezeLiving(target); // 普通 LivingEntity（如玩家等）：锁定动量与位置
+            releaseAllForPlayer(player.getServer(), player.getUUID());
          }
+         return;
+      }
 
-         // 满足 Tick 间隔时，增加曲率应力印记
-         if (strainTick) {
-            strainedTargets.add(target.getUUID());
-            applyCurvatureStrain(level, player, target, config);
+      if (isAiErasureEnabled(player)) {
+         float rawPanel = heldState.get().getBaseAttackModifier();
+         float basePanel = Math.max(10.0F, rawPanel > 0.0F ? rawPanel : InfinityStellarisDefinitions.BASE_ATTACK_MODIFIER);
+         tickDomain(level, player, basePanel, config);
+      } else {
+         releaseAllForPlayer(player.getServer(), player.getUUID());
+      }
+   }
+
+   @SubscribeEvent
+   public static void onLivingDeath(LivingDeathEvent event) {
+      if (event.getEntity().level().isClientSide) {
+         return;
+      }
+      if (event.getEntity() instanceof ServerPlayer player) {
+         if (isAiErasureEnabled(player)) {
+            disableAndSync(player, false);
+         } else {
+            clearPlayer(player);
          }
+      }
+      pruneTargetFromTracking(event.getEntity().getUUID());
+   }
 
-         // 生成时空锁定的粒子特效（末影棒、反向传送门、电火花与定期音效）
-         if (gameTime % 2L == 0L) {
-            Vec3 center = SpecialEffectSupport.centerOf(target);
-            level.sendParticles(ParticleTypes.END_ROD, center.x, center.y, center.z, 24, 0.45, 0.55, 0.45, 0.015);
-            level.sendParticles(ParticleTypes.REVERSE_PORTAL, center.x, center.y, center.z, 36, 0.6, 0.6, 0.6, 0.12);
-            level.sendParticles(ParticleTypes.ELECTRIC_SPARK, center.x, center.y, center.z, 12, 0.5, 0.5, 0.5, 0.05);
-            if (gameTime % 20L == 0L) {
-               level.sendParticles(ParticleTypes.SONIC_BOOM, center.x, center.y + 0.5, center.z, 1, 0.0, 0.0, 0.0, 0.0);
-               level.playSound(null, center.x, center.y, center.z, SoundEvents.ILLUSIONER_MIRROR_MOVE,
-                     SoundSource.PLAYERS, 0.7F, 1.5F);
+   @SubscribeEvent
+   public static void onEntityLeaveLevel(EntityLeaveLevelEvent event) {
+      if (!event.getLevel().isClientSide && event.getEntity() instanceof LivingEntity living) {
+         pruneTargetFromTracking(living.getUUID());
+      }
+   }
+
+   public static boolean isAiErasureEnabled(Player player) {
+      return player != null && DOMAIN_ENABLED.getOrDefault(player.getUUID(), false);
+   }
+
+   /**
+    * 处理来自客户端单键 {@code I} 的权威切换请求并回传最终落地状态。
+    */
+   public static boolean handleToggleRequest(ServerPlayer player, boolean requested) {
+      ModConfig.CurvatureRuptureConfig config = ModConfig.COMMON.infinityStellaris.curvatureRupture;
+      boolean canEnable = config.enabled.getValue()
+         && InfinityStellarisItemSupport.isHoldingActiveSpecialEffect(player, ModSpecialEffects.CURVATURE_RUPTURE.getId());
+
+      if (requested && canEnable) {
+         DOMAIN_ENABLED.put(player.getUUID(), true);
+         ModNetwork.sendCurvatureRuptureSync(player, true, true);
+         return true;
+      }
+
+      boolean wasEnabled = isAiErasureEnabled(player);
+      DOMAIN_ENABLED.remove(player.getUUID());
+      releaseAllForPlayer(player.getServer(), player.getUUID());
+      // 若是主动关或非法开启请求，均下发服务端当前权威状态纠偏
+      ModNetwork.sendCurvatureRuptureSync(player, false, !requested && canEnable && wasEnabled);
+      return false;
+   }
+
+   public static void clearPlayer(Player player) {
+      if (player == null) {
+         return;
+      }
+      boolean wasEnabled = DOMAIN_ENABLED.remove(player.getUUID()) != null;
+      STRAIN_MARKS.remove(player.getUUID());
+      releaseAllForPlayer(player.getServer(), player.getUUID());
+      if (wasEnabled && player instanceof ServerPlayer serverPlayer) {
+         ModNetwork.sendCurvatureRuptureSync(serverPlayer, false, false);
+      }
+   }
+
+   public static void clearAll() {
+      DOMAIN_ENABLED.clear();
+      HELD_TARGETS.clear();
+      STRAIN_MARKS.clear();
+      INTERNAL_DAMAGE.clear();
+   }
+
+   private static void disableAndSync(ServerPlayer player, boolean showMessage) {
+      DOMAIN_ENABLED.remove(player.getUUID());
+      STRAIN_MARKS.remove(player.getUUID());
+      releaseAllForPlayer(player.getServer(), player.getUUID());
+      ModNetwork.sendCurvatureRuptureSync(player, false, showMessage);
+   }
+
+   private static void tickDomain(
+      ServerLevel level, ServerPlayer player, float basePanel, ModConfig.CurvatureRuptureConfig config
+   ) {
+      UUID playerId = player.getUUID();
+      String token = tokenOf(playerId);
+      double radius = Math.max(4.0, config.curvatureRadius.getValue());
+      int maxTargets = Math.max(1, config.curvatureMaxTargets.getValue());
+
+      List<LivingEntity> targets = SpecialEffectSupport.limit(
+         SpecialEffectSupport.radialTargets(level, player, player.position(), radius),
+         maxTargets
+      );
+
+      Set<UUID> currentIds = new HashSet<>(targets.size());
+      for (LivingEntity target : targets) {
+         currentIds.add(target.getUUID());
+      }
+
+      // 关键修复：立即释放已走出范围或死亡的目标，杜绝离圈/卸区块导致永久木桩
+      Set<UUID> held = HELD_TARGETS.computeIfAbsent(playerId, ignored -> new HashSet<>());
+      if (!held.isEmpty()) {
+         Iterator<UUID> it = held.iterator();
+         while (it.hasNext()) {
+            UUID prevId = it.next();
+            if (!currentIds.contains(prevId)) {
+               releaseSingleTarget(player.getServer(), prevId, token, config.legacyKeepNoAiOnRelease.getValue());
+               it.remove();
             }
          }
       }
 
-      // 清理已离开范围或死亡目标的废弃印记数据
+      long gameTime = level.getGameTime();
+      int interval = Math.max(4, config.curvatureTickInterval.getValue());
+      boolean strainTick = gameTime % interval == 0L;
+
+      for (LivingEntity target : targets) {
+         UUID targetId = target.getUUID();
+         EntitySuspensionManager.acquire(target, token, true, true);
+         held.add(targetId);
+
+         // 清空惯性动量与仇恨寻路
+         target.stopRiding();
+         target.ejectPassengers();
+         target.setDeltaMovement(Vec3.ZERO);
+         target.fallDistance = 0.0F;
+         target.hasImpulse = true;
+         if (target instanceof Mob mob) {
+            mob.setTarget(null);
+            mob.getNavigation().stop();
+         }
+
+         if (strainTick) {
+            applyCurvatureStrain(level, player, target, basePanel, config);
+         }
+      }
+
       if (strainTick) {
-         clearMissingStrainMarks(player, strainedTargets);
+         clearMissingStrainMarks(playerId, currentIds);
+      }
+      if (gameTime % 10L == 0L) {
+         InfinityStellarisVisuals.spawnCurvatureDomainPulse(
+            level, player.position(), radius, gameTime, targets, STRAIN_MARKS.get(playerId)
+         );
+      }
+      if (held.isEmpty()) {
+         HELD_TARGETS.remove(playerId);
       }
    }
 
-   /**
-    * 剥夺 Mob 的 AI 与移动能力（时空冻结核心逻辑）。
-    */
-   private static void freezeMob(Mob mob, Player player) {
-      UUID mobId = mob.getUUID();
-      // 获取或记录该 Mob 原始的 isNoAi 状态
-      FrozenMobState state = FROZEN_MOBS.computeIfAbsent(mobId, ignored -> new FrozenMobState(mob.isNoAi()));
-      state.owners.add(player.getUUID()); // 将当前玩家标记为该 Mob 的控制者之一
-
-      mob.setTarget(null); // 清除仇恨目标
-      mob.getNavigation().stop(); // 立即停止寻路
-      mob.setNoAi(true); // 禁用 AI Tick，使生物木僵在原地
-      mob.hasImpulse = true;
-      mob.setDeltaMovement(Vec3.ZERO);// 清空三维速度向量（防止惯性滑行）
-      mob.fallDistance = 0.0F; // 清空摔落距离
-   }
-
-   /**
-    * 释放当前玩家所控制的所有被冻结生物。
-    */
-   private static void releasePlayer(Player player) {
-      MinecraftServer server = player.getServer();
-      STRAIN_MARKS.remove(player.getUUID());
-      if (server == null || FROZEN_MOBS.isEmpty()) {
+   private static void applyCurvatureStrain(
+      ServerLevel level, ServerPlayer player, LivingEntity target, float basePanel, ModConfig.CurvatureRuptureConfig config
+   ) {
+      if (!target.isAlive() || !SlashBladeTargeting.canAttack(player, target)) {
          return;
       }
-
-      UUID playerId = player.getUUID();
-      boolean restoreAi = isAiRestoreEnabled(player);
-      Iterator<Map.Entry<UUID, FrozenMobState>> iterator = FROZEN_MOBS.entrySet().iterator();
-
-      while (iterator.hasNext()) {
-         Map.Entry<UUID, FrozenMobState> entry = iterator.next();
-         FrozenMobState state = entry.getValue();
-         if (!state.owners.remove(playerId)) {
-            continue;
-         }
-
-         if (!restoreAi) {
-            state.pendingRestoreOwners.add(playerId);
-            continue;
-         }
-
-         // 仅当没有其他玩家也在冻结此生物时，才恢复其原始 AI
-         if (!state.owners.isEmpty()) {
-            continue;
-         }
-
-         state.pendingRestoreOwners.remove(playerId);
-         restoreMob(server, entry.getKey(), state);
-         iterator.remove();
+      int marks = addStrainMark(player.getUUID(), target.getUUID());
+      int threshold = Math.max(1, config.curvatureBurstMarks.getValue());
+      if (marks >= threshold) {
+         clearStrainMark(player.getUUID(), target.getUUID());
+         triggerMetricCollapse(level, player, target, basePanel, config);
       }
    }
 
-   private static void restorePendingMobs(Player player) {
-      MinecraftServer server = player.getServer();
-      if (server == null || FROZEN_MOBS.isEmpty()) {
-         return;
-      }
-
-      UUID playerId = player.getUUID();
-      Iterator<Map.Entry<UUID, FrozenMobState>> iterator = FROZEN_MOBS.entrySet().iterator();
-      while (iterator.hasNext()) {
-         Map.Entry<UUID, FrozenMobState> entry = iterator.next();
-         FrozenMobState state = entry.getValue();
-         if (!state.pendingRestoreOwners.contains(playerId) || !state.owners.isEmpty()) {
-            continue;
-         }
-
-         state.pendingRestoreOwners.remove(playerId);
-         restoreMob(server, entry.getKey(), state);
-         iterator.remove();
-      }
-   }
-
-   /**
-    * 恢复 Mob 的原始 AI 状态。
-    */
-   private static boolean restoreMob(MinecraftServer server, UUID mobId, FrozenMobState state) {
-      for (ServerLevel level : server.getAllLevels()) {
-         Entity entity = level.getEntity(mobId);
-         if (entity instanceof Mob mob && mob.isAlive()) {
-            mob.setNoAi(state.originalNoAi); // 还原为冻结前的 isNoAi 状态
-            mob.hasImpulse = true;
-            return true;
-         }
-      }
-      return false;
-   }
-
-   /**
-    * 对非 Mob 类活体实体进行速度锁定与骑乘解脱。
-    */
-   private static void freezeLiving(LivingEntity target) {
-      target.stopRiding();
-      target.ejectPassengers();
-      target.setDeltaMovement(Vec3.ZERO);
-      target.fallDistance = 0.0F;
-      target.hasImpulse = true;
-   }
-
-   /**
-    * 施加曲率应力印记。若层数达到阈值，则触发“曲率爆破”。
-    */
-   private static void applyCurvatureStrain(ServerLevel level, Player player, LivingEntity target,
-         ModConfig.InfinityStellaris config) {
+   private static void triggerMetricCollapse(
+      ServerLevel level, ServerPlayer player, LivingEntity target, float basePanel, ModConfig.CurvatureRuptureConfig config
+   ) {
       if (!target.isAlive() || !SlashBladeTargeting.canAttack(player, target)) {
          return;
       }
 
-      int marks = addStrainMark(player, target);
-      spawnStrainParticles(level, target, marks);
-
-      // 印记达到爆发上限
-      if (marks >= config.curvatureBurstMarks.getValue()) {
-         clearStrainMark(player, target);
-         triggerCurvatureBurst(level, player, target);
-      }
-   }
-
-   /**
-    * 为目标累加一层应力印记，并返回累加后的总层数。
-    */
-   private static int addStrainMark(Player player, LivingEntity target) {
-      Map<UUID, Integer> playerMarks = STRAIN_MARKS.computeIfAbsent(player.getUUID(), ignored -> new HashMap<>());
-      int marks = playerMarks.getOrDefault(target.getUUID(), 0) + 1;
-      playerMarks.put(target.getUUID(), marks);
-      return marks;
-   }
-
-   private static void clearStrainMark(Player player, LivingEntity target) {
-      Map<UUID, Integer> playerMarks = STRAIN_MARKS.get(player.getUUID());
-      if (playerMarks == null) {
-         return;
-      }
-
-      playerMarks.remove(target.getUUID());
-      if (playerMarks.isEmpty()) {
-         STRAIN_MARKS.remove(player.getUUID());
-      }
-   }
-
-   private static void clearMissingStrainMarks(Player player, Set<UUID> activeTargets) {
-      Map<UUID, Integer> playerMarks = STRAIN_MARKS.get(player.getUUID());
-      if (playerMarks == null) {
-         return;
-      }
-
-      playerMarks.keySet().removeIf(targetId -> !activeTargets.contains(targetId));
-      if (playerMarks.isEmpty()) {
-         STRAIN_MARKS.remove(player.getUUID());
-      }
-   }
-
-   /**
-    * 触发曲率爆破：重置无敌帧、破除防护并引发高能声波音爆粒子。
-    */
-   private static void triggerCurvatureBurst(ServerLevel level, Player player, LivingEntity target) {
-      if (!target.isAlive() || !SlashBladeTargeting.canAttack(player, target)) {
-         return;
-      }
-
-      ruptureTargetState(target);
-      target.invulnerableTime = 0; // 重置受击无敌帧，使得伤害可以立刻在此 Tick 结算
-      spawnBurstParticles(level, target);
-   }
-
-   /**
-    * 强制撕裂与破坏目标状态（脱离坐骑、移除所有药水 Buff、清除速度与重置 AI）。
-    */
-   private static void ruptureTargetState(LivingEntity target) {
+      // 剥离全部药水增益与吸收盾、清无敌帧并执行向心捏压（绝不绕过 EntitySuspensionManager 私写 setNoAi）
       target.stopRiding();
       target.ejectPassengers();
-      target.removeAllEffects(); // 移除所有增益/减益效果
-      target.setDeltaMovement(Vec3.ZERO);
-      target.fallDistance = 0.0F;
-      target.hasImpulse = true;
-      if (target instanceof Mob mob) {
-         mob.setTarget(null);
-         mob.getNavigation().stop();
+      target.removeAllEffects();
+      target.setAbsorptionAmount(0.0F);
+      target.invulnerableTime = 0;
+      SpecialEffectSupport.pullToward(target, player.position().add(0.0, 1.0, 0.0), 0.55);
+      target.hurtMarked = true;
+
+      Vec3 center = SpecialEffectSupport.centerOf(target);
+      level.playSound(null, center.x, center.y, center.z, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 1.4F, 0.85F);
+      level.playSound(null, center.x, center.y, center.z, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 1.1F, 0.6F);
+      InfinityStellarisVisuals.spawnCurvatureCollapsePlaceholder(level, target);
+
+      float damage = basePanel * 2.0F + target.getMaxHealth() * 0.20F;
+      DamageSource source = level.damageSources().indirectMagic(player, player);
+      UUID targetId = target.getUUID();
+      INTERNAL_DAMAGE.add(targetId);
+      try {
+         target.hurt(source, damage);
+      } finally {
+         INTERNAL_DAMAGE.remove(targetId);
+      }
+
+      int entropyMarks = Math.max(0, config.entropyMarksApplied.getValue());
+      if (target.isAlive() && entropyMarks > 0) {
+         EntropyDissolutionLogic.applyMarks(level, player, target, entropyMarks);
+      }
+   }
+
+   private static void releaseAllForPlayer(MinecraftServer server, UUID playerId) {
+      STRAIN_MARKS.remove(playerId);
+      Set<UUID> held = HELD_TARGETS.remove(playerId);
+      if (held == null || held.isEmpty()) {
+         return;
+      }
+      boolean keepNoAi = ModConfig.COMMON.infinityStellaris.curvatureRupture.legacyKeepNoAiOnRelease.getValue();
+      String token = tokenOf(playerId);
+      for (UUID targetId : held) {
+         releaseSingleTarget(server, targetId, token, keepNoAi);
+      }
+   }
+
+   private static void releaseSingleTarget(MinecraftServer server, UUID targetId, String token, boolean legacyKeepNoAi) {
+      LivingEntity resolved = resolveLiving(server, targetId);
+      EntitySuspensionManager.release(targetId, resolved, token);
+      // 仅当管理员显式开启历史高危兼容项时保留不恢复 AI 行为；默认 false 100% 安全还原
+      if (legacyKeepNoAi && resolved instanceof Mob mob && mob.isAlive() && !EntitySuspensionManager.isManaged(targetId)) {
          mob.setNoAi(true);
       }
    }
 
-   /**
-    * 根据印记层数动态扩大粒子扩散半径与密度。
-    */
-   private static void spawnStrainParticles(ServerLevel level, LivingEntity target, int marks) {
-      Vec3 center = SpecialEffectSupport.centerOf(target);
-      double radius = Math.max(0.8, target.getBbWidth() * (1.2 + marks * 0.1));
-      level.sendParticles(ParticleTypes.ELECTRIC_SPARK, center.x, center.y, center.z, 10 + marks * 2, radius * 0.45,
-            radius * 0.45, radius * 0.45, 0.04);
-      level.sendParticles(ParticleTypes.REVERSE_PORTAL, center.x, center.y, center.z, 16 + marks * 3, radius * 0.55,
-            radius * 0.55, radius * 0.55, 0.08);
+   private static LivingEntity resolveLiving(MinecraftServer server, UUID uuid) {
+      if (server == null) {
+         return null;
+      }
+      for (ServerLevel level : server.getAllLevels()) {
+         LivingEntity living = SpecialEffectSupport.findLivingEntity(level, uuid);
+         if (living != null) {
+            return living;
+         }
+      }
+      return null;
    }
 
-   /**
-    * 生成爆破瞬间的强效冲击波粒子与 Warden 声波爆破音效。
-    */
-   private static void spawnBurstParticles(ServerLevel level, LivingEntity target) {
-      Vec3 center = SpecialEffectSupport.centerOf(target);
-      double radius = Math.max(1.0, target.getBbWidth() * 2.5);
-      level.sendParticles(ParticleTypes.FLASH, center.x, center.y, center.z, 2, 0.0, 0.0, 0.0, 0.0);
-      level.sendParticles(ParticleTypes.SONIC_BOOM, center.x, center.y + 0.35, center.z, 1, 0.0, 0.0, 0.0, 0.0);
-      level.sendParticles(ParticleTypes.END_ROD, center.x, center.y, center.z, 80, radius, radius * 0.8, radius, 0.12);
-      level.sendParticles(ParticleTypes.ELECTRIC_SPARK, center.x, center.y, center.z, 96, radius, radius, radius, 0.18);
-      level.playSound(null, center.x, center.y, center.z, SoundEvents.WARDEN_SONIC_BOOM, SoundSource.PLAYERS, 1.8F,
-            0.7F);
-      level.playSound(null, center.x, center.y, center.z, SoundEvents.BEACON_DEACTIVATE, SoundSource.PLAYERS, 1.4F,
-            0.55F);
+   private static String tokenOf(UUID playerId) {
+      return "curvature_rupture:" + playerId;
    }
 
-   /**
-    * 内部静态类：存储被冻结生物在冻结之前的原始 NoAI 状态及控制者所有权列表。
-    */
-   private static final class FrozenMobState {
-      private final boolean originalNoAi;
-      private final Set<UUID> owners = new HashSet<>();
-      private final Set<UUID> pendingRestoreOwners = new HashSet<>();
+   private static int addStrainMark(UUID playerId, UUID targetId) {
+      Map<UUID, Integer> playerMarks = STRAIN_MARKS.computeIfAbsent(playerId, ignored -> new HashMap<>());
+      int marks = playerMarks.getOrDefault(targetId, 0) + 1;
+      playerMarks.put(targetId, marks);
+      return marks;
+   }
 
-      private FrozenMobState(boolean originalNoAi) {
-         this.originalNoAi = originalNoAi;
+   private static void clearStrainMark(UUID playerId, UUID targetId) {
+      Map<UUID, Integer> playerMarks = STRAIN_MARKS.get(playerId);
+      if (playerMarks != null) {
+         playerMarks.remove(targetId);
+         if (playerMarks.isEmpty()) {
+            STRAIN_MARKS.remove(playerId);
+         }
+      }
+   }
+
+   private static void clearMissingStrainMarks(UUID playerId, Set<UUID> activeTargets) {
+      Map<UUID, Integer> playerMarks = STRAIN_MARKS.get(playerId);
+      if (playerMarks != null) {
+         playerMarks.keySet().removeIf(id -> !activeTargets.contains(id));
+         if (playerMarks.isEmpty()) {
+            STRAIN_MARKS.remove(playerId);
+         }
+      }
+   }
+
+   private static void pruneTargetFromTracking(UUID targetId) {
+      if (targetId == null) {
+         return;
+      }
+      if (!STRAIN_MARKS.isEmpty()) {
+         Iterator<Map.Entry<UUID, Map<UUID, Integer>>> it = STRAIN_MARKS.entrySet().iterator();
+         while (it.hasNext()) {
+            Map<UUID, Integer> marks = it.next().getValue();
+            marks.remove(targetId);
+            if (marks.isEmpty()) {
+               it.remove();
+            }
+         }
+      }
+      if (!HELD_TARGETS.isEmpty()) {
+         Iterator<Map.Entry<UUID, Set<UUID>>> it = HELD_TARGETS.entrySet().iterator();
+         while (it.hasNext()) {
+            Set<UUID> held = it.next().getValue();
+            held.remove(targetId);
+            if (held.isEmpty()) {
+               it.remove();
+            }
+         }
       }
    }
 }

@@ -1,7 +1,9 @@
 package QWQ.QingYi.annihilationblade.nightfall_dragon.logic;
 
+import QWQ.QingYi.annihilationblade.common.BladeFlightManager;
 import QWQ.QingYi.annihilationblade.common.SlashBladeTargeting;
 import QWQ.QingYi.annihilationblade.common.SpecialEffectSupport;
+import QWQ.QingYi.annihilationblade.common.VoidRescueSupport;
 import QWQ.QingYi.annihilationblade.infinity_stellaris.logic.EntropyDissolutionLogic;
 import QWQ.QingYi.annihilationblade.infinity_stellaris.logic.GammaThunderburstLogic;
 import QWQ.QingYi.annihilationblade.nightfall_dragon.NightfallDragonDefinitions;
@@ -105,7 +107,7 @@ public final class NightfallDragonFinalFormLogic {
       return ModConfig.COMMON.nightfallDragon.worldCleavingRange.getValue();
    }
 
-   private static final Set<UUID> PLAYERS_WITH_FLIGHT = new HashSet<>();
+   private static final String FLIGHT_TOKEN = "nightfall_dragon";
    private static final Set<UUID> INTERNAL_FINAL_DAMAGE = new HashSet<>();
    private static final Map<UUID, Long> BLADE_STORM_SWORD_IDS = new HashMap<>();
    private static final Map<UUID, FrozenMobState> FROZEN_MOBS = new HashMap<>();
@@ -213,11 +215,13 @@ public final class NightfallDragonFinalFormLogic {
       UUID playerId = player.getUUID();
       purgeSuppression(player.level().getGameTime());
 
-      // 背包内如果没有终极形态武器，清理飞行和冻结数据
+      // 背包内如果没有终极形态武器，清理飞行持锁和冻结数据
       if (!hasFinalFormInInventory(player)) {
-         if (PLAYERS_WITH_FLIGHT.contains(playerId) || ownsFrozenMob(playerId)) {
-            clearPlayer(player);
+         BladeFlightManager.syncToken(player, FLIGHT_TOKEN, false);
+         if (ownsFrozenMob(playerId)) {
+            clearCombatState(player);
          }
+         clampCreationShield(player);
          return;
       }
 
@@ -226,9 +230,11 @@ public final class NightfallDragonFinalFormLogic {
          NightfallDragonDefinitions.ensureStats(stack, player.level());
       }
 
-      // 拥有“龙神之躯”特效：持续刷新护身 Buff 与飞行、防掉虚空
+      // 拥有“龙神之躯”特效：持续刷新护身 Buff 与共享飞行、维度安全虚空救助
       if (hasFinalEffect(stack, ModSpecialEffects.DRAGON_GOD_BODY.getId())) {
          refreshGodBody(player);
+      } else {
+         BladeFlightManager.syncToken(player, FLIGHT_TOKEN, false);
       }
 
       // 只有正拿着刀时才激活结界和飞行切割
@@ -277,14 +283,16 @@ public final class NightfallDragonFinalFormLogic {
 
    @SubscribeEvent
    public static void onPlayerChangedDimension(PlayerChangedDimensionEvent event) {
-      clearPlayer(event.getEntity());
+      // 跨维度仅清理战斗冻结态，不主动撤销共享飞行持锁避免过传送门坠落
+      clearCombatState(event.getEntity());
+      clampCreationShield(event.getEntity());
    }
 
    /**
     * 龙神之躯 (Dragon God Body)：
     * 1. 消除一切负面效果（如中毒、凋零、虚弱等）。
-    * 2. 赋予玩家在生存模式下的创造模式飞行能力 (mayfly)。
-    * 3. 掉入虚空 (Y < -64) 时，将其瞬间传送至高空 320 格并开飞行。
+    * 2. 经 {@link BladeFlightManager} 赋予跨刀共享飞行权限。
+    * 3. 经 {@link VoidRescueSupport} 在任意维度安全救起坠虚空玩家（适配下界顶棚）。
     */
    private static void refreshGodBody(Player player) {
       restoreBearer(player);
@@ -292,22 +300,8 @@ public final class NightfallDragonFinalFormLogic {
       removeHarmfulEffects(player);
       // 龙神之躯光环由客户端 NightfallAuraFx 根据手持状态自行绘制，服务端不再每 tick 发送粒子
 
-      // 赋予飞行权限
-      if (!player.isCreative() && !player.isSpectator() && !player.getAbilities().mayfly) {
-         player.getAbilities().mayfly = true;
-         PLAYERS_WITH_FLIGHT.add(player.getUUID());
-         player.onUpdateAbilities();
-      }
-
-      // 虚空救起防死
-      if (player.getY() < -64.0) {
-         player.teleportTo(player.getX(), 320.0, player.getZ());
-         player.setDeltaMovement(0.0, 0.0, 0.0);
-         if (!player.getAbilities().flying) {
-            player.getAbilities().flying = true;
-            player.onUpdateAbilities();
-         }
-      }
+      BladeFlightManager.syncToken(player, FLIGHT_TOKEN, true);
+      VoidRescueSupport.rescueIfInVoid(player);
    }
 
    /**
@@ -652,11 +646,7 @@ public final class NightfallDragonFinalFormLogic {
    private static void clearPlayer(Player player) {
       clearCombatState(player);
       clampCreationShield(player);
-      if (!player.isCreative() && !player.isSpectator() && PLAYERS_WITH_FLIGHT.remove(player.getUUID())) {
-         player.getAbilities().mayfly = false;
-         player.getAbilities().flying = false;
-         player.onUpdateAbilities();
-      }
+      BladeFlightManager.syncToken(player, FLIGHT_TOKEN, false);
    }
 
    private static void clearCombatState(Player player) {

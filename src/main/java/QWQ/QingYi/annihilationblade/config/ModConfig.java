@@ -4,6 +4,7 @@ import QWQ.QingYi.annihilationblade.Annihilationblade;
 import com.iafenvoy.jupiter.config.container.AutoInitConfigContainer;
 import com.iafenvoy.jupiter.config.entry.BooleanEntry;
 import com.iafenvoy.jupiter.config.entry.DoubleEntry;
+import com.iafenvoy.jupiter.config.entry.EnumEntry;
 import com.iafenvoy.jupiter.config.entry.IntegerEntry;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -30,6 +31,11 @@ public final class ModConfig {
       public final PhantomJudgement phantomJudgement;
       public final Domain bloodPrisonDomain;
       public final PhantomBurst bloodPrisonPhantomBurst;
+      public final EntropyDissolutionConfig entropyDissolution;
+      public final CosmicStringCutConfig cosmicStringCut;
+      public final GammaThunderburstConfig gammaThunderburst;
+      public final CurvatureRuptureConfig curvatureRupture;
+      public final VacuumDecayConfig vacuumDecay;
 
       private Common() {
          super(ResourceLocation.fromNamespaceAndPath(Annihilationblade.MODID, "common"), "config.annihilationblade.common.title", "./config/annihilationblade/common.json");
@@ -47,6 +53,11 @@ public final class ModConfig {
          this.phantomJudgement = this.annihilationBlade.phantomJudgement;
          this.bloodPrisonDomain = this.bloodPrison.domain;
          this.bloodPrisonPhantomBurst = this.bloodPrison.phantomBurst;
+         this.entropyDissolution = this.infinityStellaris.entropyDissolution;
+         this.cosmicStringCut = this.infinityStellaris.cosmicStringCut;
+         this.gammaThunderburst = this.infinityStellaris.gammaThunderburst;
+         this.curvatureRupture = this.infinityStellaris.curvatureRupture;
+         this.vacuumDecay = this.infinityStellaris.vacuumDecay;
       }
 
    }
@@ -54,11 +65,113 @@ public final class ModConfig {
    public static final class Client extends AutoInitConfigContainer {
       public final ClientTooltips clientTooltips = new ClientTooltips();
       public final ClientRenderer clientRenderer = new ClientRenderer();
+      public final StellarisEngine stellarisEngine = new StellarisEngine();
 
       private Client() {
          super(ResourceLocation.fromNamespaceAndPath(Annihilationblade.MODID, "client"), "config.annihilationblade.client.title", "./config/annihilationblade/client.json");
       }
 
+   }
+
+   /** 星穹渲染引擎画质预设枚举。 */
+   public enum StellarisQualityPreset {
+      FALLBACK("config.annihilationblade.stellaris_engine.quality.fallback"),
+      BALANCED("config.annihilationblade.stellaris_engine.quality.balanced"),
+      CINEMATIC("config.annihilationblade.stellaris_engine.quality.cinematic"),
+      ULTIMATE("config.annihilationblade.stellaris_engine.quality.ultimate");
+
+      private final String translationKey;
+
+      StellarisQualityPreset(String translationKey) {
+         this.translationKey = translationKey;
+      }
+
+      public String translationKey() {
+         return this.translationKey;
+      }
+   }
+
+   /** 12fps 冲击帧光敏安全档位枚举（D3 定案：默认 SAFE）。 */
+   public enum ImpactFrameMode {
+      OFF("config.annihilationblade.stellaris_engine.impact_frames.off"),
+      SAFE("config.annihilationblade.stellaris_engine.impact_frames.safe"),
+      FULL("config.annihilationblade.stellaris_engine.impact_frames.full");
+
+      private final String translationKey;
+
+      ImpactFrameMode(String translationKey) {
+         this.translationKey = translationKey;
+      }
+
+      public String translationKey() {
+         return this.translationKey;
+      }
+   }
+
+   /** SA「真空衰变·坍缩」星海跃迁导演过场模式（D2 定案：默认 B 方案 2.4 s）。 */
+   public enum SaCinematicMode {
+      OFF("config.annihilationblade.stellaris_engine.sa_cinematic.off"),
+      COMPACT_2S("config.annihilationblade.stellaris_engine.sa_cinematic.compact_2s");
+
+      private final String translationKey;
+
+      SaCinematicMode(String translationKey) {
+         this.translationKey = translationKey;
+      }
+
+      public String translationKey() {
+         return this.translationKey;
+      }
+   }
+
+   /**
+    * 无尽星空专属「星穹渲染引擎（Stellaris Engine）」客户端配置。
+    * 仅控制客户端视觉、画质降级、光敏安全档与音效演出，不影响服务端玩法判定。
+    * 镜头震动上限与总闪白系数继承自 {@link ClientRenderer}，光影包启用时自动与 {@link ClientRenderer#withShaderPack} 协同。
+    */
+   public static final class StellarisEngine extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final EnumEntry<StellarisQualityPreset> qualityPreset = enumKey(
+         "stellaris_quality_preset", StellarisQualityPreset.CINEMATIC, StellarisQualityPreset::translationKey
+      );
+      public final BooleanEntry worldCaptureEnabled = boolValue(
+         "stellaris_world_capture_enabled", true, "config.annihilationblade.stellaris_world_capture_enabled.tooltip"
+      );
+      public final BooleanEntry anamorphicStreaks = boolValue(
+         "stellaris_anamorphic_streaks", true, "config.annihilationblade.stellaris_anamorphic_streaks.tooltip"
+      );
+      public final EnumEntry<ImpactFrameMode> impactFrames = enumKey(
+         "stellaris_impact_frames", ImpactFrameMode.SAFE, ImpactFrameMode::translationKey
+      );
+      public final DoubleEntry impactFrameIntensity = doubleKey("stellaris_impact_frame_intensity", 1.0, 0.0, 1.0);
+      public final BooleanEntry fullImpactWarningAcknowledged = boolValue(
+         "stellaris_full_impact_warning_acknowledged", false, "config.annihilationblade.stellaris_full_impact_warning_acknowledged.tooltip"
+      );
+      public final BooleanEntry flashBlindnessEnabled = boolValue(
+         "stellaris_flash_blindness_enabled", true, "config.annihilationblade.stellaris_flash_blindness_enabled.tooltip"
+      );
+      public final BooleanEntry audioSilencingEnabled = boolValue(
+         "stellaris_audio_silencing_enabled", true, "config.annihilationblade.stellaris_audio_silencing_enabled.tooltip"
+      );
+      public final EnumEntry<SaCinematicMode> saCinematicMode = enumKey(
+         "stellaris_sa_cinematic_mode", SaCinematicMode.COMPACT_2S, SaCinematicMode::translationKey
+      );
+      public final BooleanEntry bladeCosmicParallax = boolValue(
+         "stellaris_blade_cosmic_parallax", true, "config.annihilationblade.stellaris_blade_cosmic_parallax.tooltip"
+      );
+      public final BooleanEntry auraEnabled = boolValue(
+         "stellaris_aura_enabled", true, "config.annihilationblade.stellaris_aura_enabled.tooltip"
+      );
+      public final DoubleEntry auraAlpha = doubleKey("stellaris_aura_alpha", 1.0, 0.0, 1.0);
+      public final BooleanEntry gpuAdaptive = boolValue(
+         "stellaris_gpu_adaptive", true, "config.annihilationblade.stellaris_gpu_adaptive.tooltip"
+      );
+      public final BooleanEntry disableHeavyPassesWithShaderPack = boolValue(
+         "stellaris_disable_heavy_passes_with_shader_pack", false, "config.annihilationblade.stellaris_disable_heavy_passes_with_shader_pack.tooltip"
+      );
+
+      private StellarisEngine() {
+         super("stellaris_engine", "config.annihilationblade.stellaris_engine.title");
+      }
    }
 
    /**
@@ -80,6 +193,10 @@ public final class ModConfig {
       public final DoubleEntry chromaticAberration = doubleKey("fx_chromatic_aberration", 1.0, 0.0, 2.0);
       /** 检测到 Iris/Oculus 光影包时是否仍启用渲染器（延迟到光影合成之后绘制）。 */
       public final BooleanEntry withShaderPack = boolValue("fx_with_shader_pack", true, "config.annihilationblade.fx_with_shader_pack.tooltip");
+      /** 持刀永昼视界开关；开启后在星穹夺夜/压暗演出与光影包下仍会自动平滑退让以守护深空对比度。 */
+      public final BooleanEntry bladeFullbrightVision = boolValue(
+         "blade_fullbright_vision", true, "config.annihilationblade.blade_fullbright_vision.tooltip"
+      );
 
       private ClientRenderer() {
          super("client_renderer", "config.annihilationblade.client_renderer.title");
@@ -418,28 +535,124 @@ public final class ModConfig {
       }
    }
 
-   public static final class InfinityStellaris extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+   public static final class InfinityStellaris {
+      public final EntropyDissolutionConfig entropyDissolution;
+      public final CosmicStringCutConfig cosmicStringCut;
+      public final GammaThunderburstConfig gammaThunderburst;
+      public final CurvatureRuptureConfig curvatureRupture;
+      public final VacuumDecayConfig vacuumDecay;
+
+      private InfinityStellaris() {
+         this.entropyDissolution = new EntropyDissolutionConfig();
+         this.cosmicStringCut = new CosmicStringCutConfig();
+         this.gammaThunderburst = new GammaThunderburstConfig();
+         this.curvatureRupture = new CurvatureRuptureConfig();
+         this.vacuumDecay = new VacuumDecayConfig();
+      }
+   }
+
+   public static final class EntropyDissolutionConfig extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry entropyPercent;
       public final IntegerEntry entropyMarks;
       public final IntegerEntry entropyBlacklistTicks;
+      public final DoubleEntry visualScale;
+
+      private EntropyDissolutionConfig() {
+         super("infinity_stellaris.entropy_dissolution", "config.annihilationblade.infinity_stellaris.entropy_dissolution.title");
+         this.enabled = infinitySeEnabled("entropy_dissolution");
+         this.entropyPercent = doubleValue("entropy_percent", 0.10, 0.0, 1.0, "熵增蚀解每次命中额外削减的目标最大生命比例。", "Max-health ratio stripped per hit by Entropy Dissolution.");
+         this.entropyMarks = intValue("entropy_marks", 10, 1, 100, "触发热寂归零处决所需累计熵增层数。", "Entropy marks required to trigger Heat Death execution.");
+         this.entropyBlacklistTicks = intValue("entropy_blacklist_ticks", 40, 0, 400, "普通非玩家目标处决后的防重复触发黑名单时长（tick）。", "Short blacklist duration in ticks after non-player execution.");
+         this.visualScale = visualScale(1.0);
+      }
+   }
+
+   public static final class CosmicStringCutConfig extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
+      public final DoubleEntry range;
+      public final DoubleEntry shiftRange;
+      public final IntegerEntry maxTargets;
+      public final IntegerEntry bindTicks;
+      public final IntegerEntry cooldownTicks;
+      public final IntegerEntry entropyMarksApplied;
+      public final DoubleEntry visualScale;
+
+      private CosmicStringCutConfig() {
+         super("infinity_stellaris.cosmic_string_cut", "config.annihilationblade.infinity_stellaris.cosmic_string_cut.title");
+         this.enabled = infinitySeEnabled("cosmic_string_cut");
+         this.range = doubleValue("range", 32.0, 6.0, 96.0, "宇宙弦切常态中远程弦网索敌半径（格）。", "Default Cosmic String Cut web range in blocks.");
+         this.shiftRange = doubleValue("shift_range", 64.0, 12.0, 128.0, "潜行（Shift）挥刀时的远距弦网索敌半径（格）。", "Extended Cosmic String Cut range in blocks while sneaking.");
+         this.maxTargets = intValue("max_targets", 10, 1, 32, "单次宇宙弦网最多锁定的目标数量。", "Maximum targets bound by a single Cosmic String Cut.");
+         this.bindTicks = intValue("bind_ticks", 9, 2, 30, "弦网束缚至拨弦崩断结算的延迟 tick（默认 9 tick）。", "Ticks from string binding to pluck detonation (default 9).");
+         this.cooldownTicks = intValue("cooldown_ticks", 14, 0, 120, "宇宙弦切触发冷却（tick）。", "Cosmic String Cut trigger cooldown in ticks.");
+         this.entropyMarksApplied = intValue("entropy_marks_applied", 1, 0, 10, "每次拨弦结算为命中目标叠加的熵增印记层数。", "Entropy marks applied to each hit target on pluck.");
+         this.visualScale = visualScale(1.0);
+      }
+   }
+
+   public static final class GammaThunderburstConfig extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
+      public final IntegerEntry warningTicks;
+      public final IntegerEntry beamTicks;
+      public final DoubleEntry radius;
+      public final IntegerEntry cooldownTicks;
+      public final IntegerEntry entropyMarksApplied;
+      public final DoubleEntry visualScale;
+
+      private GammaThunderburstConfig() {
+         super("infinity_stellaris.gamma_thunderburst", "config.annihilationblade.infinity_stellaris.gamma_thunderburst.title");
+         this.enabled = infinitySeEnabled("gamma_thunderburst");
+         this.warningTicks = intValue("warning_ticks", 12, 4, 40, "天基轨道炮锁定预警时长（tick，默认 12 tick）。", "Orbital cannon targeting warning duration in ticks.");
+         this.beamTicks = intValue("beam_ticks", 18, 6, 60, "伽马光柱贯地持续打击时长（tick，默认 18 tick）。", "Gamma beam sustained strike duration in ticks.");
+         this.radius = doubleValue("radius", 5.5, 2.0, 16.0, "伽马光柱地表打击半径（格，默认 5.5）。", "Gamma beam impact radius in blocks (default 5.5).");
+         this.cooldownTicks = intValue("cooldown_ticks", 30, 0, 200, "伽马霆爆触发冷却（tick）。", "Gamma Thunderburst trigger cooldown in ticks.");
+         this.entropyMarksApplied = intValue("entropy_marks_applied", 2, 0, 10, "轨道炮命中时为范围内目标叠加的熵增印记层数。", "Entropy marks applied by Gamma Thunderburst.");
+         this.visualScale = visualScale(1.0);
+      }
+   }
+
+   public static final class CurvatureRuptureConfig extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
       public final DoubleEntry curvatureRadius;
       public final IntegerEntry curvatureTickInterval;
       public final IntegerEntry curvatureMaxTargets;
       public final IntegerEntry curvatureBurstMarks;
-      public final BooleanEntry enableAuraParticles;
-      public final BooleanEntry enableStringLatticeParticles;
+      public final IntegerEntry entropyMarksApplied;
+      public final BooleanEntry legacyKeepNoAiOnRelease;
+      public final DoubleEntry visualScale;
 
-      private InfinityStellaris() {
-         super("infinity_stellaris", "config.annihilationblade.infinity_stellaris.title");
-         this.entropyPercent = doubleValue("entropy_percent", 0.10, 0.0, 1.0, "熵增蚀解每次追加的最大生命百分比。", "Max-health percentage added by Entropy Dissolution.");
-         this.entropyMarks = intValue("entropy_marks", 10, 1, 100, "触发热寂归零所需累计次数。", "Marks required before heat-death zeroing.");
-         this.entropyBlacklistTicks = intValue("entropy_blacklist_ticks", 40, 0, 400, "非玩家目标最终阶段后的短期黑名单 tick。", "Temporary blacklist ticks after final non-player execution.");
-         this.curvatureRadius = doubleValue("curvature_radius", 32.0, 1.0, 128.0, "曲率撕裂冻结半径。", "Curvature rupture freeze radius.");
-         this.curvatureTickInterval = intValue("curvature_tick_interval", 20, 1, 100, "曲率压缩伤害间隔 tick。", "Curvature strain mark interval in ticks.");
-         this.curvatureMaxTargets = intValue("curvature_max_targets", 64, 1, 256, "曲率撕裂每次最多压制目标数。", "Maximum targets suppressed by Curvature Rupture.");
-         this.curvatureBurstMarks = intValue("curvature_burst_marks", 5, 1, 100, "触发曲率爆裂所需层数。", "Marks required to trigger curvature burst.");
-         this.enableAuraParticles = boolValue("enable_aura_particles", true, "config.annihilationblade.infinity_stellaris.enable_aura_particles.tooltip");
-         this.enableStringLatticeParticles = boolValue("enable_string_lattice_particles", false, "config.annihilationblade.infinity_stellaris.enable_string_lattice_particles.tooltip");
+      private CurvatureRuptureConfig() {
+         super("infinity_stellaris.curvature_rupture", "config.annihilationblade.infinity_stellaris.curvature_rupture.title");
+         this.enabled = infinitySeEnabled("curvature_rupture");
+         this.curvatureRadius = doubleValue("curvature_radius", 22.0, 4.0, 64.0, "曲率撕裂领域压制与重力漏斗作用半径（格，默认 22）。", "Curvature Rupture domain radius in blocks (default 22).");
+         this.curvatureTickInterval = intValue("curvature_tick_interval", 20, 4, 100, "曲率应力印记叠加间隔（tick，默认 20 tick = 1 秒）。", "Curvature strain mark interval in ticks (default 20).");
+         this.curvatureMaxTargets = intValue("curvature_max_targets", 32, 1, 128, "曲率领域同时压制的最大目标数。", "Maximum targets simultaneously suppressed by Curvature Rupture.");
+         this.curvatureBurstMarks = intValue("curvature_burst_marks", 4, 1, 20, "触发度规撕裂坍缩所需的应力层数（默认 4 层）。", "Strain marks required to trigger metric rupture collapse.");
+         this.entropyMarksApplied = intValue("entropy_marks_applied", 2, 0, 10, "度规坍缩爆发时叠加的熵增印记层数。", "Entropy marks applied on metric rupture collapse.");
+         this.legacyKeepNoAiOnRelease = boolValue("legacy_keep_no_ai_on_release", false, "config.annihilationblade.infinity_stellaris.legacy_keep_no_ai_on_release.tooltip");
+         this.visualScale = visualScale(1.0);
+      }
+   }
+
+   public static final class VacuumDecayConfig extends AutoInitConfigContainer.AutoInitConfigCategoryBase {
+      public final BooleanEntry enabled;
+      public final DoubleEntry castRange;
+      public final DoubleEntry zoneRadius;
+      public final IntegerEntry durationTicks;
+      public final IntegerEntry cooldownTicks;
+      public final BooleanEntry clearDrops;
+      public final DoubleEntry visualScale;
+
+      private VacuumDecayConfig() {
+         super("infinity_stellaris.vacuum_decay", "config.annihilationblade.infinity_stellaris.vacuum_decay.title");
+         this.enabled = boolValue("enabled", true, "config.annihilationblade.infinity_stellaris.vacuum_decay.enabled.tooltip");
+         this.castRange = doubleValue("cast_range", 160.0, 16.0, 256.0, "真空衰变·坍缩最大视线施法距离（格，与视距对齐避免远距隐身）。", "Maximum cast distance in blocks aligned with render range.");
+         this.zoneRadius = doubleValue("zone_radius", 64.0, 16.0, 128.0, "真空衰变·坍缩结界水平半径（格，默认 64）。", "Vacuum Decay Collapse domain horizontal radius in blocks.");
+         this.durationTicks = intValue("duration_ticks", 184, 140, 320, "真空衰变·坍缩总演出与结界时长（tick，默认 184 = 9.2 秒）。", "Total Vacuum Decay Collapse duration in ticks (default 184 = 9.2s).");
+         this.cooldownTicks = intValue("cooldown_ticks", 200, 0, 1200, "真空衰变·坍缩施法冷却（tick，默认 200 = 10 秒）。", "Vacuum Decay Collapse cast cooldown in ticks.");
+         this.clearDrops = boolValue("clear_drops", false, "config.annihilationblade.infinity_stellaris.vacuum_decay.clear_drops.tooltip");
+         this.visualScale = visualScale(1.0);
       }
    }
 
@@ -542,6 +755,23 @@ public final class ModConfig {
       return BooleanEntry.builder("config.annihilationblade.se_enabled", true)
          .key("enabled")
          .tooltip("config.annihilationblade.annihilation_blade." + seId + ".enabled.tooltip")
+         .build();
+   }
+
+   private static BooleanEntry infinitySeEnabled(String seId) {
+      return BooleanEntry.builder("config.annihilationblade.se_enabled", true)
+         .key("enabled")
+         .tooltip("config.annihilationblade.infinity_stellaris." + seId + ".enabled.tooltip")
+         .build();
+   }
+
+   private static <T extends Enum<T>> EnumEntry<T> enumKey(
+      String name, T defaultValue, java.util.function.Function<T, String> keyProvider
+   ) {
+      return EnumEntry.builder("config.annihilationblade." + name, defaultValue)
+         .key(name)
+         .tooltip("config.annihilationblade." + name + ".tooltip")
+         .nameProvider(value -> Component.translatable(keyProvider.apply(value)))
          .build();
    }
 

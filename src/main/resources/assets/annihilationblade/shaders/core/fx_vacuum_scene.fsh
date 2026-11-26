@@ -16,8 +16,9 @@ uniform mat4 ViewProj;
 uniform vec4 Zone;      // xyz = 结界中心（相对相机），w = 水平半边长
 uniform vec4 ZoneExtra; // x = 中心以上高度, y = 中心以下深度, z = 结界强度, w = 种子
 uniform vec4 Bubble;    // x = 真空泡半径, y = 泡壁强度, z = 泡壁厚度, w = 崩解进度
-uniform vec4 Core;      // xyz = 奇点中心（相对相机），w = 黑洞半径
+uniform vec4 Core;      // xyz = 奇点中心（相对相机，随坠落动态下移），w = 黑洞半径
 uniform vec4 Shock;     // x = 冲击波半径, y = 强度, z = 厚度, w = 奇点闪光
+uniform vec4 Collapse;  // x = 坠落强度, y = 过载/内爆坍缩强度, z = 死寂呼吸拍, w = 大爆炸进度
 uniform float FxTime;
 
 in vec2 texCoord;
@@ -53,8 +54,10 @@ void main() {
     float gridMinor = fxSurfaceGrid(surface - Zone.xyz, surfaceNormal, 4.0, 0.035);
     float gridMajor = fxSurfaceGrid(surface - Zone.xyz, surfaceNormal, 16.0, 0.02);
     vec2 offset = vec2(0.0);
+    float refractT = sceneT;
+    bool anyRefract = false;
 
-    // 真空泡壁：轮廓处的径向折射
+    // 真空泡壁：轮廓处的径向折射（仅在泡壁仍活跃时参与前景深度保护，防止进入结界后把 refractT 归零引发近景鬼影）
     vec3 zc = Zone.xyz;
     float tcZone = dot(zc, rd);
     float zw;
@@ -66,12 +69,14 @@ void main() {
         float frontT = tcZone - sqrt(max(Bubble.x * Bubble.x - dRay * dRay, 0.0));
         vec2 dir = uv - zuv;
         float len = length(dir);
-        if (frontT < sceneT && len > 1.0e-4) {
+        if (frontT > 0.0 && frontT < sceneT && len > 1.0e-4 && ring > 0.005) {
             offset += dir / len * ring * Bubble.y * 0.03;
+            refractT = min(refractT, frontT);
+            anyRefract = true;
         }
     }
 
-    // 奇点：引力透镜与终结冲击波
+    // 奇点：坠落与内爆坍缩期强化的真实黑洞引力透镜 + 终结双波前冲击波折射
     vec3 core = Core.xyz;
     float tc = dot(core, rd);
     float dCore = length(core - rd * tc);
@@ -79,21 +84,44 @@ void main() {
     vec2 cuv = projectUv(core, cw);
     bool coreAhead = cw > 0.0 && tc > 0.0;
     if (Core.w > 0.0 && coreAhead && tc - Core.w < sceneT) {
-        offset += fxLensOffset(uv, cuv, dCore, Core.w);
+        // 坠落与坍缩内爆时增大透镜弯折倍率，令周遭地形/云层被强力吸扭向视界中心
+        float lensBoost = 1.0 + Collapse.x * 0.35 + Collapse.y * 0.72 + Collapse.z * 0.25;
+        vec2 lensOff = fxLensOffset(uv, cuv, dCore, Core.w) * lensBoost;
+        if (dot(lensOff, lensOff) > 1.0e-10) {
+            offset += lensOff;
+            refractT = min(refractT, max(tc - Core.w, 0.0));
+            anyRefract = true;
+        }
     }
     if (Shock.y > 0.0 && coreAhead) {
-        float qShock = (dCore - Shock.x) / max(Shock.z, 0.1);
-        float ring = exp(-(qShock * qShock));
-        float frontT = tc - sqrt(max(Shock.x * Shock.x - dCore * dCore, 0.0));
         vec2 dir = uv - cuv;
         float len = length(dir);
-        if (frontT < sceneT && len > 1.0e-4) {
-            offset += dir / len * ring * Shock.y * 0.04;
+        if (len > 1.0e-4) {
+            vec2 radial = dir / len;
+            float thick = max(Shock.z, 0.1);
+            // 主外真空相变波前：强烈向外径向折射
+            float qOuter = (dCore - Shock.x) / thick;
+            float ringOuter = exp(-(qOuter * qOuter));
+            float frontOuter = tc - sqrt(max(Shock.x * Shock.x - dCore * dCore, 0.0));
+            if (frontOuter > 0.0 && frontOuter < sceneT && ringOuter > 0.005) {
+                offset += radial * ringOuter * Shock.y * 0.052;
+                refractT = min(refractT, frontOuter);
+                anyRefract = true;
+            }
+            // 次级内热核冲击波前：紧随其后产生反向压缩畸变，强化厚重气浪质感
+            float innerR = Shock.x * 0.66;
+            float qInner = (dCore - innerR) / max(thick * 0.72, 0.1);
+            float ringInner = exp(-(qInner * qInner));
+            float frontInner = tc - sqrt(max(innerR * innerR - dCore * dCore, 0.0));
+            if (frontInner > 0.0 && frontInner < sceneT && ringInner > 0.005) {
+                offset -= radial * ringInner * Shock.y * 0.028;
+                refractT = min(refractT, frontInner);
+                anyRefract = true;
+            }
         }
     }
 
-    float refractT = max(min(tcZone - Bubble.x, tc - Core.w), 0.0);
-    vec2 safeUv = fxSafeRefractUv(uv, offset, refractT, Sampler1, InvProj);
+    vec2 safeUv = anyRefract ? fxSafeRefractUv(uv, offset, refractT, Sampler1, InvProj) : uv;
     vec3 color = texture(Sampler0, safeUv).rgb;
 
     if (strength > 0.0) {
