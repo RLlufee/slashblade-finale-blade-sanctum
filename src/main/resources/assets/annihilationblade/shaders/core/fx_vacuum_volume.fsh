@@ -147,40 +147,73 @@ void main() {
         }
     }
 
-    // 爆心超新星白热体积闪核（随 Shock.z 缩放）
-    float flashRadius = max(Shock.z, 0.5) * 9.5;
+    // 爆心紧凑锐利奇点核闪（收敛半径，绝不大面积糊白洗屏）
+    float flashRadius = max(Shock.z * 2.1, 2.8);
     if (Shock.w > 0.0 && tc > 0.0 && tc - flashRadius < sceneT) {
-        float qFlash = dCore / flashRadius;
-        float qCore = dCore / max(flashRadius * 0.32, 0.3);
-        acc += (vec3(0.94, 0.98, 1.0) * exp(-(qCore * qCore)) * 4.8 + vec3(0.26, 0.92, 1.0) * exp(-(qFlash * qFlash)) * 2.6) * Shock.w;
+        float qCore = dCore / max(flashRadius * 0.36, 0.35);
+        float qRim = dCore / flashRadius;
+        acc += (vec3(0.95, 0.99, 1.0) * exp(-(qCore * qCore)) * 2.4 + vec3(0.18, 0.92, 1.0) * exp(-(qRim * qRim)) * 1.15) * Shock.w;
     }
 
-    // 5. 双波前超新星真空冲击球（主外虹彩相变壳 + 次内白热等离子壳 + 球壳间薄电离辉光）
-    if (Shock.y > 0.0 && tc > 0.0) {
-        float thick = max(Shock.z, 0.15);
-        // 主外波前：切伦科夫冰青 + 流动虹彩真空相变壳
-        float frontOuter = tc - sqrt(max(Shock.x * Shock.x - dCore * dCore, 0.0));
-        if (frontOuter < sceneT) {
-            float qOuter = (dCore - Shock.x) / thick;
-            float outerBand = exp(-(qOuter * qOuter));
-            vec3 hitLocal = rd * max(frontOuter, 0.0) - core;
-            float iridPhase = fxSafeAtan(hitLocal.z, hitLocal.x) * 0.35 + hitLocal.y * 0.04 - FxTime * 0.85;
-            vec3 outerTint = mix(vec3(0.28, 0.94, 1.0), iridescence(iridPhase), 0.42);
-            acc += outerTint * outerBand * Shock.y * 2.4;
-        }
-        // 次级内波前：半径 0.66×，炽烈恒星白热 + 伽马电紫火球冲击层
-        float innerR = Shock.x * 0.66;
-        float frontInner = tc - sqrt(max(innerR * innerR - dCore * dCore, 0.0));
-        if (frontInner < sceneT) {
-            float qInner = (dCore - innerR) / max(thick * 0.72, 0.12);
-            float innerBand = exp(-(qInner * qInner));
-            vec3 innerTint = mix(vec3(0.62, 0.46, 1.0), vec3(0.96, 0.99, 1.0), innerBand * 0.75);
-            acc += innerTint * innerBand * Shock.y * 2.1;
-            // 球壳内稀薄高能电离膜（沿掠射边缘微亮，赋予爆炸球厚重立体体积感）
-            if (dCore < Shock.x && innerR > 0.5) {
-                float radial01 = clamp(dCore / max(Shock.x, 0.01), 0.0, 1.0);
-                float shellFill = smoothstep(0.45, 0.98, radial01) * (1.0 - smoothstep(0.98, 1.0, radial01));
-                acc += vec3(0.24, 0.55, 1.0) * shellFill * Shock.y * 0.48;
+    // 5. 无尽星空专属：像素级解析「真真空相变刀锋前沿 + 星云暗纹界膜 + 引力波细环 + 地表实景切割辉光」
+    if (Shock.y > 0.0) {
+        bool isDetonation = Collapse.w > 0.001;
+        if (isDetonation) {
+            // 5a. 100% 像素级平滑的解析相变穹顶前沿（不限 tc > 0，玩家身处球内 360° 转头亦零截断）
+            vec2 domeHit = fxSphere(rd, core, Shock.x);
+            for (int i = 0; i < 2; i++) {
+                float tHit = i == 0 ? domeHit.x : domeHit.y;
+                if (tHit > 0.0 && tHit < sceneT) {
+                    vec3 hitPos = rd * tHit - core;
+                    vec3 n = hitPos / max(Shock.x, 1.0e-3);
+                    float ndv = clamp(abs(dot(n, rd)), 0.0, 1.0);
+                    // 极锐利的刀锋菲涅尔边 + 球面星云丝状干涉细纹（仅在外侧边微亮，内部清澈见底）
+                    float razorRim = fxSafePow(1.0 - ndv, 5.5);
+                    float softLimb = fxSafePow(1.0 - ndv, 2.8);
+                    float filament = smoothstep(0.46, 0.88, fxFbm3(n * 4.8 + vec3(FxTime * 0.22, -FxTime * 0.35, ZoneExtra.w * 0.13)));
+                    float iridPhase = fxSafeAtan(n.z, n.x) * 0.42 + n.y * 0.85 - FxTime * 0.75;
+                    vec3 edgeCol = mix(vec3(0.14, 0.96, 1.0), iridescence(iridPhase), 0.32);
+                    vec3 rimLight = edgeCol * (razorRim * 1.75 + softLimb * filament * 0.55)
+                        + vec3(0.95, 0.99, 1.0) * fxSafePow(1.0 - ndv, 12.0) * 1.35;
+                    acc += rimLight * Shock.y * (i == 0 ? 1.0 : 0.42);
+                }
+            }
+
+            // 5b. 次级黑体金→电紫引力波星环细纹（位于 0.74× 半径，细锐冷暖撞色）
+            if (tc > 0.0) {
+                float innerR = Shock.x * 0.74;
+                float frontInner = tc - sqrt(max(innerR * innerR - dCore * dCore, 0.0));
+                if (frontInner < sceneT) {
+                    float qInner = (dCore - innerR) / max(Shock.z * 0.24, 0.14);
+                    float fineWave = exp(-(qInner * qInner));
+                    vec3 goldViolet = mix(vec3(0.55, 0.38, 1.0), vec3(1.0, 0.76, 0.34), fineWave * 0.8);
+                    acc += goldViolet * fineWave * Shock.y * 1.35;
+                }
+            }
+
+            // 5c. 相变球壳与真实地表/建筑的 3D 交线切割辉光（360° 随方块起伏实时扫过）
+            if (depth < 0.9999) {
+                float dSurf = length(surface - core);
+                float seam = abs(dSurf - Shock.x);
+                float cutGlow = exp(-(seam * seam) / 1.6);
+                acc += vec3(0.20, 0.96, 1.0) * cutGlow * Shock.y * 1.25;
+            }
+
+            // 5d. 爆心反冲暗蚀核外圈：爆发前几帧在漆黑反冲核边缘燃起极细爱因斯坦白金光子刃
+            float eclipseWindow = sin(clamp(Collapse.w / 0.28, 0.0, 1.0) * FX_PI);
+            if (eclipseWindow > 0.01 && tc > 0.0) {
+                float eclipseR = max(Shock.z * 0.85, 1.6) * eclipseWindow;
+                if (tc - eclipseR < sceneT) {
+                    float einstein = exp(-abs(dCore - eclipseR * 1.12) / max(eclipseR * 0.11, 0.08));
+                    acc += mix(vec3(1.0, 0.82, 0.42), vec3(0.95, 0.99, 1.0), einstein) * einstein * eclipseWindow * 3.2;
+                }
+            }
+        } else if (tc > 0.0) {
+            // 砸地瞬间紧凑震波光边
+            float frontT = tc - sqrt(max(Shock.x * Shock.x - dCore * dCore, 0.0));
+            if (frontT < sceneT) {
+                float qShock = (dCore - Shock.x) / max(Shock.z * 0.65, 0.12);
+                acc += vec3(0.32, 0.92, 1.0) * exp(-(qShock * qShock)) * Shock.y * 1.35;
             }
         }
     }

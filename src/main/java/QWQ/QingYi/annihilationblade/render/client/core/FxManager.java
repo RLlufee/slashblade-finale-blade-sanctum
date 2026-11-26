@@ -35,7 +35,10 @@ import org.joml.Matrix4f;
 public final class FxManager {
    private static final int MAX_ACTIVE = 64;
    private static final List<FxInstance> ACTIVE = new ArrayList<>();
+   /** tick 遍历期间衍生的新特效暂存队列，避免遍历 ACTIVE 时直接 add 触发 ConcurrentModificationException。 */
+   private static final List<FxInstance> PENDING_ADD = new ArrayList<>();
    private static final it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<FxInstance> SUSTAINED = new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>();
+   private static boolean ticking;
    private static ClientLevel lastLevel;
    private static final FxScreenState SCREEN = new FxScreenState();
    private static final Matrix4f VIEW = new Matrix4f();
@@ -48,6 +51,17 @@ public final class FxManager {
    }
 
    public static void add(FxInstance instance) {
+      if (instance == null) {
+         return;
+      }
+      if (ticking) {
+         PENDING_ADD.add(instance);
+         return;
+      }
+      addNow(instance);
+   }
+
+   private static void addNow(FxInstance instance) {
       ClientLevel level = Minecraft.getInstance().level;
       if (level != lastLevel) {
          // 新世界的第一个特效包可能早于本 tick 的世界切换检测到达，先清理旧世界再加入
@@ -92,6 +106,7 @@ public final class FxManager {
          instance.onRemoved();
       }
       ACTIVE.clear();
+      PENDING_ADD.clear();
       SUSTAINED.clear();
       shake = 0.0F;
       fovKick = 0.0F;
@@ -124,20 +139,32 @@ public final class FxManager {
          return;
       }
       boolean rendererActive = FxPipeline.INSTANCE.active();
-      Iterator<FxInstance> iterator = ACTIVE.iterator();
-      while (iterator.hasNext()) {
-         FxInstance instance = iterator.next();
-         try {
-            instance.advance(level, rendererActive);
-         } catch (RuntimeException exception) {
-            Annihilationblade.LOGGER.error("[AnnihilationBlade FX] Effect tick failed, removing {}", instance.getClass().getSimpleName(), exception);
-            iterator.remove();
-            remove(instance);
-            continue;
+      ticking = true;
+      try {
+         Iterator<FxInstance> iterator = ACTIVE.iterator();
+         while (iterator.hasNext()) {
+            FxInstance instance = iterator.next();
+            try {
+               instance.advance(level, rendererActive);
+            } catch (RuntimeException exception) {
+               Annihilationblade.LOGGER.error("[AnnihilationBlade FX] Effect tick failed, removing {}", instance.getClass().getSimpleName(), exception);
+               iterator.remove();
+               remove(instance);
+               continue;
+            }
+            if (instance.finished()) {
+               iterator.remove();
+               remove(instance);
+            }
          }
-         if (instance.finished()) {
-            iterator.remove();
-            remove(instance);
+      } finally {
+         ticking = false;
+         if (!PENDING_ADD.isEmpty()) {
+            List<FxInstance> spawned = new ArrayList<>(PENDING_ADD);
+            PENDING_ADD.clear();
+            for (FxInstance child : spawned) {
+               addNow(child);
+            }
          }
       }
    }

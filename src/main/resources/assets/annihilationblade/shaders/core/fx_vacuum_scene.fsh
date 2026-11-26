@@ -98,23 +98,24 @@ void main() {
         float len = length(dir);
         if (len > 1.0e-4) {
             vec2 radial = dir / len;
-            float thick = max(Shock.z, 0.1);
-            // 主外真空相变波前：强烈向外径向折射
+            // 终幕大爆炸（Collapse.w > 0.001）使用极锐利刀锋真空相变折射，避免厚重模糊盾壳感
+            bool isDetonation = Collapse.w > 0.001;
+            float thick = max(Shock.z * (isDetonation ? 0.42 : 0.85), 0.12);
             float qOuter = (dCore - Shock.x) / thick;
             float ringOuter = exp(-(qOuter * qOuter));
             float frontOuter = tc - sqrt(max(Shock.x * Shock.x - dCore * dCore, 0.0));
             if (frontOuter > 0.0 && frontOuter < sceneT && ringOuter > 0.005) {
-                offset += radial * ringOuter * Shock.y * 0.052;
+                offset += radial * ringOuter * Shock.y * (isDetonation ? 0.045 : 0.036);
                 refractT = min(refractT, frontOuter);
                 anyRefract = true;
             }
-            // 次级内热核冲击波前：紧随其后产生反向压缩畸变，强化厚重气浪质感
-            float innerR = Shock.x * 0.66;
-            float qInner = (dCore - innerR) / max(thick * 0.72, 0.1);
+            // 次级引力波精细涟漪（位于 0.74× 半径，反向微拉扯增强空间相变锐度）
+            float innerR = Shock.x * 0.74;
+            float qInner = (dCore - innerR) / max(thick * 0.62, 0.10);
             float ringInner = exp(-(qInner * qInner));
             float frontInner = tc - sqrt(max(innerR * innerR - dCore * dCore, 0.0));
             if (frontInner > 0.0 && frontInner < sceneT && ringInner > 0.005) {
-                offset -= radial * ringInner * Shock.y * 0.028;
+                offset -= radial * ringInner * Shock.y * 0.022;
                 refractT = min(refractT, frontInner);
                 anyRefract = true;
             }
@@ -144,6 +145,43 @@ void main() {
                 vec3 space = fxVoidSky(rd, vec3(ZoneExtra.w), FxTime) * 1.25 + color * 0.15;
                 color = mix(color, space, 0.85 * inside);
             }
+        }
+    }
+
+    // 终幕专属「真真空相变暗蚀穹顶」：相变波扫过之处坠入极致深邃的高对比星渊暗蓝，
+    // 并在球壳与真实地表/建筑的 3D 交线上刻出刀锋般的冰青相变切割刃（100% 像素级解析平滑，绝不惨白糊屏）
+    if (Collapse.w > 0.001 && Shock.y > 0.001 && Shock.x > 0.2) {
+        float phaseFade = Shock.y * (1.0 - smoothstep(0.68, 1.0, Collapse.w));
+        if (!sky) {
+            float dSurf = length(surface - core);
+            float insideDome = 1.0 - smoothstep(Shock.x - 1.8, Shock.x + 0.35, dSurf);
+            if (insideDome > 0.001) {
+                float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+                // 深邃高对比星渊负像色调：保留方块与树冠清晰暗影轮廓，把亮部拉出冷冽星光质感
+                vec3 abyssTint = vec3(0.03, 0.07, 0.16) + vec3(0.18, 0.56, 0.92) * (luma * luma * 0.95);
+                color = mix(color, abyssTint, insideDome * phaseFade * 0.82);
+            }
+            // 地表/山体/建筑的实时 3D 真空相变切割前沿
+            float seamDist = abs(dSurf - Shock.x);
+            float cutLine = exp(-(seamDist * seamDist) / 1.45);
+            float innerSeam = abs(dSurf - Shock.x * 0.74);
+            float goldRip = exp(-(innerSeam * innerSeam) / 0.85);
+            color += vec3(0.22, 0.96, 1.0) * cutLine * phaseFade * 1.15;
+            color += vec3(1.0, 0.76, 0.34) * goldRip * phaseFade * 0.45;
+        } else {
+            // 天空进入相变波视野时压出深空极夜，令星爆十字芒、赤道星盘与伽马射流呈现剧场级对比
+            vec2 domeHit = fxSphere(rd, core, Shock.x);
+            if (domeHit.y > 0.0) {
+                float skyDark = clamp((1.0 - dCore / max(Shock.x, 0.1)) * 1.4, 0.0, 1.0);
+                vec3 deepVoid = fxVoidSky(rd, vec3(ZoneExtra.w + 7.0), FxTime * 1.4) * 1.1;
+                color = mix(color, deepVoid, skyDark * phaseFade * 0.78);
+            }
+        }
+        // 爆发最前几帧（0..0.28）：在十字星芒中央闪现像素级完美圆润的「漆黑奇点反冲暗蚀核」
+        float eclipseWindow = sin(clamp(Collapse.w / 0.28, 0.0, 1.0) * FX_PI);
+        if (eclipseWindow > 0.01 && coreAhead) {
+            float eclipseR = max(Shock.z * 0.85, 1.6) * eclipseWindow;
+            color = fxEventHorizon(color, rd, core, eclipseR, dCore, tc, sceneT);
         }
     }
 

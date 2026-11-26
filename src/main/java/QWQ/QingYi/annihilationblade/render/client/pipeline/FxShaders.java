@@ -39,6 +39,8 @@ public final class FxShaders {
    @Nullable public static ShaderInstance fractureVolume;
    @Nullable public static ShaderInstance vacuumScene;
    @Nullable public static ShaderInstance vacuumVolume;
+   @Nullable public static ShaderInstance vacuumScorchScene;
+   @Nullable public static ShaderInstance vacuumScorchVolume;
    @Nullable public static ShaderInstance descentScene;
    @Nullable public static ShaderInstance descentVolume;
    @Nullable public static ShaderInstance bloodScene;
@@ -68,6 +70,8 @@ public final class FxShaders {
       register(event, "fx_fracture_volume", DefaultVertexFormat.POSITION, shader -> fractureVolume = shader);
       register(event, "fx_vacuum_scene", DefaultVertexFormat.POSITION, shader -> vacuumScene = shader);
       register(event, "fx_vacuum_volume", DefaultVertexFormat.POSITION, shader -> vacuumVolume = shader);
+      register(event, "fx_vacuum_scorch_scene", DefaultVertexFormat.POSITION, shader -> vacuumScorchScene = shader);
+      register(event, "fx_vacuum_scorch_volume", DefaultVertexFormat.POSITION, shader -> vacuumScorchVolume = shader);
       register(event, "fx_descent_scene", DefaultVertexFormat.POSITION, shader -> descentScene = shader);
       register(event, "fx_descent_volume", DefaultVertexFormat.POSITION, shader -> descentVolume = shader);
       register(event, "fx_blood_scene", DefaultVertexFormat.POSITION, shader -> bloodScene = shader);

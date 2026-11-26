@@ -4,6 +4,7 @@ import QWQ.QingYi.annihilationblade.annihilation_blade.client.ClientBladeVision;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
 import QWQ.QingYi.annihilationblade.render.client.core.FxFrame;
 import QWQ.QingYi.annihilationblade.render.client.core.FxInstance;
+import QWQ.QingYi.annihilationblade.render.client.core.FxManager;
 import QWQ.QingYi.annihilationblade.render.client.core.FxPass;
 import QWQ.QingYi.annihilationblade.render.client.core.FxScreenState;
 import QWQ.QingYi.annihilationblade.render.client.geometry.FxGeometry;
@@ -107,6 +108,7 @@ public final class VacuumDecayFx extends FxInstance {
 
    private boolean plungeSoundPlayed;
    private boolean impactTriggered;
+   private boolean scorchSpawned;
    private boolean implosionSoundPlayed;
    private boolean detonationTriggered;
    private boolean infallInitialized;
@@ -475,7 +477,22 @@ public final class VacuumDecayFx extends FxInstance {
          }
       }
 
-      // ── 阶段 A5a 起点：黑洞坠地砸击瞬间（116t） ──
+      // ── 阶段 A5a 起点：黑洞坠地砸击瞬间（116t）──
+      if (!this.scorchSpawned && age >= this.plungeImpactAge && age < this.reckoningAge + 24) {
+         this.scorchSpawned = true;
+         int detonateDelay = Math.max(0, this.reckoningAge - this.plungeImpactAge);
+         int elapsedSinceImpact = Math.max(0, age - this.plungeImpactAge);
+         FxManager.add(new VacuumScorchMarkFx(
+            new Vec3(this.center.x, this.groundY, this.center.z),
+            this.half,
+            this.coreMax,
+            this.visualScale,
+            this.enclosedSpace,
+            detonateDelay,
+            this.seed,
+            elapsedSinceImpact
+         ));
+      }
       if (!this.impactTriggered && age >= this.plungeImpactAge && age < this.reckoningAge) {
          this.impactTriggered = true;
          level.playLocalSound(this.impactSingularity.x, this.impactSingularity.y, this.impactSingularity.z, SoundEvents.GENERIC_EXPLODE, SoundSource.PLAYERS, 3.8F, 0.42F, false);
@@ -730,40 +747,36 @@ public final class VacuumDecayFx extends FxInstance {
          this.drawCollapseShards(body, frame, a, true);
       }
 
-      // 5. 终幕超新星大爆炸：暗核裂壳 + 冲天暗烟柱 + 贴地暗烟气浪裙 + 爆射黑曜碎骸
+      // 5. 终幕无尽星空专属超新星爆裂本体暗层：
+      // 取消容易撞脸与显露多边形的巨型球罩，改为「爆心短促漆黑反冲暗核 + 细锐伽马射流暗轴 + 54 枚 3D 黑曜棱晶」
       if (after > 0.0F && after < 1.0F) {
          Vector3f blastCenter = frame.rel(this.impactSingularity);
-         float tShell = FxMath.window(a, this.reckoningAge, this.reckoningAge + 16.0F);
-         if (tShell < 1.0F) {
-            float shellR = this.coreMax * 0.4F + this.half * 0.78F * FxMath.easeOutCubic(tShell);
-            float shellA = (1.0F - tShell) * (1.0F - tShell) * 0.78F;
-            body.geoCenter(blastCenter);
-            body.begin(Style.CORONA, 0.85F, 0.6F, 1.8F, 1.8F, 1.6F, 0.9F);
-            body.deformedSphere(blastCenter, shellR, 14, 22, a * 0.07F, 0.085F * (1.0F - tShell * 0.5F), 3.0F, a * 0.35F, 0.10F, 0.04F, 0.22F, shellA);
-            body.end();
-            body.clearGeoCenter();
+
+         // 5a. 爆炸最前 10 tick 爆心反冲暗核（紧凑高分段球体，稳稳压住中心反差）
+         float tEclipse = FxMath.window(a, this.reckoningAge, this.reckoningAge + 10.5F);
+         if (tEclipse < 1.0F) {
+            float pulse = (float) Math.sin(tEclipse * Math.PI);
+            float eclipseR = Math.max(1.4F, this.coreMax * 1.18F) * pulse;
+            if (eclipseR > 0.15F) {
+               body.geoCenter(blastCenter);
+               body.begin(Style.CORONA, 0.75F, 0.25F, 2.4F, 1.5F, 1.2F, 0.4F);
+               body.deformedSphere(blastCenter, eclipseR, 20, 32, a * 0.06F, 0.015F, 2.5F, a * 0.25F, ABYSS[0], ABYSS[1], ABYSS[2], 0.96F * pulse);
+               body.end();
+               body.clearGeoCenter();
+            }
          }
 
-         float tPillar = FxMath.window(a, this.reckoningAge, this.reckoningAge + 30.0F);
-         if (tPillar < 1.0F) {
+         // 5b. 细锐伽马射线暴暗紫磁轴衬底（取代原先粗壮白柱，令射流在白昼同样深邃锋利）
+         float tJet = FxMath.window(a, this.reckoningAge, this.reckoningAge + 28.0F);
+         if (tJet < 1.0F) {
             double colTopY = this.enclosedSpace
                ? Math.max(this.impactSingularity.y + 8.0, this.ceilingY)
-               : Math.min(this.impactSingularity.y + 135.0, this.ceilingY + 48.0);
-            float colR = Math.max(2.6F, this.coreMax * (0.95F + 0.65F * FxMath.easeOutCubic(Math.min(1.0F, tPillar * 3.0F)))) * (1.0F - tPillar * 0.55F);
-            Vector3f pBase = frame.rel(new Vec3(this.center.x, this.groundY - 0.5, this.center.z));
+               : Math.min(this.impactSingularity.y + 145.0, this.ceilingY + 56.0);
+            float jetR = Math.max(1.0F, this.coreMax * 0.44F) * (1.0F - tJet * 0.62F);
+            Vector3f pBase = frame.rel(new Vec3(this.center.x, this.groundY - 0.4, this.center.z));
             Vector3f pTop = frame.rel(new Vec3(this.center.x, colTopY, this.center.z));
-            body.begin(Style.PLASMA_BEAM, 0.9F, 0.6F, 2.0F, -2.4F, tPillar, Math.min(1.0F, tPillar * 2.2F));
-            body.cylinder(pBase, pTop, colR * 1.15F, colR * 0.85F, 20, -a * 0.06F, 0.10F, 0.06F, 0.24F, 0.78F * (1.0F - tPillar));
-            body.end();
-         }
-
-         float tCone = FxMath.window(a, this.reckoningAge, this.reckoningAge + 28.0F);
-         if (tCone < 1.0F) {
-            float skirtR = this.coreMax + this.half * 1.48F * FxMath.easeOutCubic(tCone);
-            Vector3f cBase = frame.rel(new Vec3(this.center.x, this.groundY + 0.2, this.center.z));
-            Vector3f cTop = frame.rel(new Vec3(this.center.x, this.groundY + 5.5 + this.coreMax * 1.4 * (1.0F - tCone * 0.5F), this.center.z));
-            body.begin(Style.SHOCK_CONE, 0.9F, 0.5F, tCone, 2.8F, 1.1F, 0.65F);
-            body.cylinder(cBase, cTop, skirtR * 0.22F, skirtR, 28, -a * 0.05F, 0.09F, 0.05F, 0.22F, 0.82F * (1.0F - tCone));
+            body.begin(Style.PLASMA_BEAM, 0.88F, 0.45F, 2.0F, -3.2F, tJet, Math.min(1.0F, tJet * 2.4F));
+            body.cylinder(pBase, pTop, jetR * 1.25F, jetR * 0.55F, 18, -a * 0.08F, 0.08F, 0.04F, 0.20F, 0.78F * (1.0F - tJet));
             body.end();
          }
 
@@ -1063,110 +1076,132 @@ public final class VacuumDecayFx extends FxInstance {
          g.end();
       }
 
-      // 8. 阶段 A6：多层超新星真空坍缩大爆炸（134..172t，全部自地面 impactSingularity 轰然引爆！）
+      // 8. 阶段 A6：无尽星空专属「真真空相变 × 韦伯超新星十字芒 × 赤道星系爆发盘 × 双极伽马磁流体喷流 × 浑天仪星轨」
+      // （彻底剔除易与湮灭之刃撞脸且易过曝露棱角的大发光球罩，球形相变穹顶完全交由像素级解析着色器呈现！）
       if (after > 0.0F && after < 1.0F) {
          Vector3f blastCenter = frame.rel(this.impactSingularity);
          boolean anamorphic = ModConfig.CLIENT.stellarisEngine.anamorphicStreaks.getValue();
 
-         // 8a. 爆心核爆闪光 + 超宽变形镜头星芒
-         float tFlash = FxMath.window(a, this.reckoningAge, this.reckoningAge + 11.0F);
-         if (tFlash < 1.0F) {
-            float f2 = (1.0F - tFlash) * (1.0F - tFlash);
-            g.begin(Style.GLOW, 22.0F, 0.8F, 5.0F, 2.2F, anamorphic ? 4.8F : 1.4F, 0.0F);
-            g.billboard(blastCenter, this.half * (0.95F + 1.35F * tFlash), 0.0F, WHITE[0], WHITE[1], WHITE[2], f2);
+         // 8a. 韦伯望远镜级超新星衍射十字星芒（高锐度、极窄核芯、零全屏洗白）
+         float tStar = FxMath.window(a, this.reckoningAge, this.reckoningAge + 14.0F);
+         if (tStar < 1.0F) {
+            float f2 = (1.0F - tStar) * (1.0F - tStar);
+            float coreSize = Math.max(4.0F, this.coreMax * (2.6F + 1.8F * FxMath.easeOutCubic(tStar)));
+            // 紧凑白热核 + 水平宽银幕主星针
+            g.begin(Style.GLOW, 11.5F * f2, 0.6F, 11.0F, 4.2F, anamorphic ? 6.8F : 1.8F, 0.0F);
+            g.billboard(blastCenter, coreSize * (anamorphic ? 3.2F : 1.4F), 0.0F, WHITE[0], WHITE[1], WHITE[2], f2);
+            g.end();
+            // 垂直切伦科夫冰青辅星针（旋转 90° 构成锐利十字星芒）
+            if (anamorphic) {
+               g.begin(Style.GLOW, 7.5F * f2, 0.5F, 14.0F, 5.5F, 5.4F, 0.0F);
+               g.billboard(blastCenter, coreSize * 2.15F, (float) (Math.PI * 0.5), CYAN[0], CYAN[1], CYAN[2], f2 * 0.9F);
+               // 斜 45° 细弱黑体金衍射芒（哈勃/韦伯六芒超新星光斑质感）
+               g.begin(Style.GLOW, 5.2F * f2, 0.5F, 16.0F, 6.2F, 4.5F, 0.0F);
+               g.billboard(blastCenter, coreSize * 1.45F, 0.58F, GOLD[0], GOLD[1], GOLD[2], f2 * 0.72F);
+               g.billboard(blastCenter, coreSize * 1.45F, -0.58F, GOLD[0], GOLD[1], GOLD[2], f2 * 0.72F);
+               g.end();
+            }
+         }
+
+         // 8b. 赤道超新星爆发星系盘（从黑洞吸积平面向外狂暴铺开的螺旋星云盘，取代厚重等离子球盾！）
+         float tDisk = FxMath.window(a, this.reckoningAge, this.reckoningAge + 30.0F);
+         if (tDisk < 1.0F) {
+            float diskR = this.coreMax * 1.2F + this.half * 1.45F * FxMath.easeOutCubic(tDisk);
+            float diskFade = (1.0F - tDisk) * (1.0F - tDisk * 0.4F);
+            float innerHole = Mth.clamp(0.16F + tDisk * 0.58F, 0.16F, 0.82F);
+            float tilt = 0.24F;
+            float spin = a * 0.024F;
+            Vector3f u = new Vector3f((float) Math.cos(spin) * diskR, 0.0F, (float) Math.sin(spin) * diskR).rotateX(tilt);
+            Vector3f v = new Vector3f(-(float) Math.sin(spin) * diskR, 0.0F, (float) Math.cos(spin) * diskR).rotateX(tilt);
+            g.begin(Style.DISK, 6.2F * diskFade, 0.45F, innerHole, 2.4F, this.seedFloat + 5.0F, 0.78F);
+            g.quad(blastCenter, u, v, CYAN[0], CYAN[1], CYAN[2], diskFade * 0.92F);
             g.end();
          }
 
-         // 8b. 双层 3D 沸腾超新星爆裂火球壳（内层白热冰青核 + 外层电紫高能火球）
-         float tInnerBall = FxMath.window(a, this.reckoningAge, this.reckoningAge + 22.0F);
-         if (tInnerBall < 1.0F) {
-            float rIn = this.coreMax * 0.35F + this.half * 0.76F * FxMath.easeOutCubic(tInnerBall);
-            float aIn = (1.0F - tInnerBall) * (1.0F - tInnerBall);
-            g.geoCenter(blastCenter);
-            g.begin(Style.CORONA, 11.5F * aIn, 0.55F, 1.55F, 2.1F, 1.8F, 1.0F);
-            g.deformedSphere(blastCenter, rIn, 16, 24, a * 0.08F, 0.095F * (1.0F - tInnerBall * 0.5F), 3.2F, a * 0.42F, CYAN[0], CYAN[1], CYAN[2], aIn);
-            g.end();
-            g.clearGeoCenter();
-         }
-         float tOuterBall = FxMath.window(a, this.reckoningAge, this.reckoningAge + 30.0F);
-         if (tOuterBall < 1.0F) {
-            float rOut = this.coreMax * 0.55F + this.half * 1.15F * FxMath.easeOutCubic(tOuterBall);
-            float aOut = (1.0F - tOuterBall) * (1.0F - tOuterBall);
-            g.geoCenter(blastCenter);
-            g.begin(Style.CORONA, 7.2F * aOut, 0.65F, 2.15F, 1.85F, 1.35F, 0.8F);
-            g.deformedSphere(blastCenter, rOut, 16, 24, -a * 0.06F, 0.065F * (1.0F - tOuterBall * 0.4F), 2.5F, -a * 0.3F, VIOLET[0], VIOLET[1], VIOLET[2], aOut * 0.85F);
-            g.end();
-            g.clearGeoCenter();
-         }
-
-         // 8c. 冲天超新星坍缩光柱（3D 双层嵌套等离子圆柱，从爆心直插天穹）
-         float tPillar = FxMath.window(a, this.reckoningAge, this.reckoningAge + 32.0F);
-         if (tPillar < 1.0F) {
+         // 8c. 双极相对论伽马射线暴（细锐白青穿云针束 + 4 条 3D 螺旋磁流体缠绕丝带）
+         float tJet = FxMath.window(a, this.reckoningAge, this.reckoningAge + 32.0F);
+         if (tJet < 1.0F) {
             double colTopY = this.enclosedSpace
                ? Math.max(this.impactSingularity.y + 8.0, this.ceilingY)
-               : Math.min(this.impactSingularity.y + 140.0, this.ceilingY + 52.0);
-            float growCol = FxMath.easeOutCubic(Math.min(1.0F, tPillar * 3.5F));
-            float colFade = (1.0F - tPillar) * (1.0F - tPillar * 0.45F);
-            float outerR = Math.max(2.8F, this.coreMax * (1.05F + 0.85F * growCol)) * (1.0F - tPillar * 0.52F);
-            float innerR = outerR * 0.48F;
-            Vector3f pBase = frame.rel(new Vec3(this.center.x, this.groundY - 0.5, this.center.z));
+               : Math.min(this.impactSingularity.y + 148.0, this.ceilingY + 58.0);
+            float jetFade = (1.0F - tJet) * (1.0F - tJet * 0.45F);
+            float jetOuterR = Math.max(1.15F, this.coreMax * 0.48F) * (1.0F - tJet * 0.58F);
+            float jetInnerR = jetOuterR * 0.42F;
+            Vector3f pBase = frame.rel(new Vec3(this.center.x, this.groundY - 0.3, this.center.z));
             Vector3f pTop = frame.rel(new Vec3(this.center.x, colTopY, this.center.z));
-            float wavePos = Math.min(1.0F, tPillar * 1.9F);
+            float wavePos = Math.min(1.0F, tJet * 2.1F);
 
-            // 外层冰青/电紫湍流柱
-            g.begin(Style.PLASMA_BEAM, 9.0F * colFade, 0.55F, 2.0F, -2.8F, tPillar, wavePos);
-            g.cylinder(pBase, pTop, outerR * 1.25F, outerR * 0.9F, 22, a * 0.08F, CYAN[0], CYAN[1], CYAN[2], colFade);
+            // 细锐切伦科夫冰青外束
+            g.begin(Style.PLASMA_BEAM, 6.8F * jetFade, 0.45F, 2.0F, -3.4F, tJet, wavePos);
+            g.cylinder(pBase, pTop, jetOuterR * 1.15F, jetOuterR * 0.52F, 20, a * 0.1F, CYAN[0], CYAN[1], CYAN[2], jetFade);
             g.end();
-            // 内层恒星白热核心柱
-            g.begin(Style.PLASMA_BEAM, 14.0F * colFade, 0.45F, 3.0F, -3.8F, tPillar, Math.min(1.0F, tPillar * 2.4F));
-            g.cylinder(pBase, pTop, innerR * 1.1F, innerR * 0.72F, 16, -a * 0.12F, WHITE[0], WHITE[1], WHITE[2], colFade);
+            // 极锐恒星白热核心针束
+            g.begin(Style.PLASMA_BEAM, 10.5F * jetFade, 0.35F, 3.0F, -4.4F, tJet, Math.min(1.0F, tJet * 2.6F));
+            g.cylinder(pBase, pTop, jetInnerR, jetInnerR * 0.45F, 14, -a * 0.14F, WHITE[0], WHITE[1], WHITE[2], jetFade);
+            g.end();
+
+            // 4 条 3D 螺旋磁流体丝带：绕伽马射流高速拧卷直冲天穹，极具天体物理辨识度
+            double jetHeight = Math.max(8.0, colTopY - this.impactSingularity.y);
+            int helixSteps = 28;
+            g.begin(Style.RIBBON, 7.8F * jetFade, 0.25F, 5.5F, 8.0F, 16.0F, 0.72F);
+            for (int h = 0; h < 4; h++) {
+               float baseAng = h * (FxMath.TAU * 0.25F) + a * (h % 2 == 0 ? 0.28F : -0.24F);
+               float dirSign = h % 2 == 0 ? 1.0F : -1.0F;
+               List<Vector3f> pts = new ArrayList<>(helixSteps + 1);
+               float[] widths = new float[helixSteps + 1];
+               float[] alphas = new float[helixSteps + 1];
+               for (int k = 0; k <= helixSteps; k++) {
+                  float u = (float) k / helixSteps;
+                  float heightReach = Math.min(1.0F, tJet * 4.2F);
+                  double hy = this.impactSingularity.y + jetHeight * u * heightReach;
+                  float spiralR = jetOuterR * (1.85F + 1.65F * u + 0.9F * FxMath.easeOutCubic(tJet)) * (1.0F - u * 0.35F);
+                  float ang = baseAng + dirSign * u * FxMath.TAU * 3.2F;
+                  pts.add(frame.rel(new Vec3(this.center.x + Math.cos(ang) * spiralR, hy, this.center.z + Math.sin(ang) * spiralR)));
+                  widths[k] = Math.max(0.14F, jetOuterR * 0.28F * (1.0F - u * 0.55F));
+                  alphas[k] = (float) Math.sin(u * Math.PI) * jetFade;
+               }
+               float[] hCol = h % 2 == 0 ? CYAN : (h == 1 ? GOLD : VIOLET);
+               g.ribbon(pts, widths, alphas, hCol[0], hCol[1], hCol[2]);
+            }
             g.end();
          }
 
-         // 8d. 贴地双层超音速马赫气浪锥裙 + 三重地表冲击波环
-         float tCone = FxMath.window(a, this.reckoningAge, this.reckoningAge + 30.0F);
-         if (tCone < 1.0F) {
-            float cFade = (1.0F - tCone) * (1.0F - tCone);
-            float skirtR = this.coreMax + this.half * 1.62F * FxMath.easeOutCubic(tCone);
-            Vector3f cBase = frame.rel(new Vec3(this.center.x, this.groundY + 0.18, this.center.z));
-            Vector3f cTop = frame.rel(new Vec3(this.center.x, this.groundY + 6.0 + this.coreMax * 1.5 * (1.0F - tCone * 0.45F), this.center.z));
-            g.begin(Style.SHOCK_CONE, 11.0F * cFade, 0.45F, tCone, 3.2F, 1.15F, 0.9F);
-            g.cylinder(cBase, cTop, skirtR * 0.22F, skirtR, 30, a * 0.09F, CYAN[0], CYAN[1], CYAN[2], cFade);
-            g.end();
-
-            // 略高一层电紫次级激波锥
-            Vector3f cTop2 = frame.rel(new Vec3(this.center.x, this.groundY + 11.0 + this.coreMax * 2.0 * (1.0F - tCone * 0.4F), this.center.z));
-            g.begin(Style.SHOCK_CONE, 6.8F * cFade, 0.55F, Math.min(1.0F, tCone * 1.15F), 2.5F, 1.25F, 0.5F);
-            g.cylinder(cBase, cTop2, skirtR * 0.16F, skirtR * 0.78F, 26, -a * 0.07F, VIOLET[0], VIOLET[1], VIOLET[2], cFade * 0.85F);
+         // 8d. 三轴正交「星穹浑天仪」极细 3D 立体经纬星轨（无尽星空专属标志剪影，从爆心高速旋转展开）
+         float tArmillary = FxMath.window(a, this.reckoningAge, this.reckoningAge + 30.0F);
+         if (tArmillary < 1.0F) {
+            float armR = this.coreMax * 0.75F + this.half * 1.28F * FxMath.easeOutCubic(tArmillary);
+            float fineTube = Math.max(0.09F, this.coreMax * 0.085F * (1.0F - tArmillary * 0.55F));
+            float aArm = (1.0F - tArmillary) * (1.0F - tArmillary * 0.5F);
+            float rot = a * 0.065F;
+            Vector3f n1 = new Vector3f(0.18F, 0.96F, 0.21F).normalize();
+            Vector3f n2 = new Vector3f((float) Math.cos(rot) * 0.82F, 0.42F, (float) Math.sin(rot) * 0.82F).normalize();
+            Vector3f n3 = new Vector3f(-(float) Math.sin(rot) * 0.78F, 0.48F, (float) Math.cos(rot) * 0.78F).normalize();
+            g.begin(Style.RIBBON, 8.2F * aArm, 0.25F, 5.5F, 6.0F, 12.0F, 0.65F);
+            g.torus(blastCenter, n1, armR, fineTube * 1.15F, 44, 6, a * 0.14F, CYAN[0], CYAN[1], CYAN[2], aArm);
+            g.torus(blastCenter, n2, armR * 0.84F, fineTube, 40, 6, -a * 0.12F, GOLD[0], GOLD[1], GOLD[2], aArm * 0.88F);
+            g.torus(blastCenter, n3, armR * 0.66F, fineTube * 0.9F, 36, 6, a * 0.16F, WHITE[0], WHITE[1], WHITE[2], aArm * 0.82F);
             g.end();
          }
 
-         // 三重地表冲击波环（外圈冰青 + 中圈白热 + 内圈虚线电紫）
-         float rOuter = this.half * 2.05F * FxMath.easeOutCubic(after);
-         float rMid = this.half * 1.42F * FxMath.easeOutCubic(after);
-         float rInner = this.half * 0.92F * FxMath.easeOutCubic(after);
-         float ringFade = 1.0F - after;
-         g.begin(Style.RING, 9.5F * ringFade, 0.0F, 0.94F, 0.045F, 0.0F, 0.0F);
+         // 8e. 地表真真空相变刻度阵 + 极锐利双速地表星环（清晰露出地面暗蚀剪影，告别模糊气浪罩）
+         float tRuneBurst = FxMath.window(a, this.reckoningAge, this.reckoningAge + 18.0F);
+         if (tRuneBurst < 1.0F) {
+            float runeR = this.coreMax * 2.2F + this.half * 0.92F * FxMath.easeOutCubic(tRuneBurst);
+            float rFade = (1.0F - tRuneBurst) * (1.0F - tRuneBurst);
+            g.begin(Style.RUNE, 5.2F * rFade, 0.0F, -a * 0.045F, this.seedFloat + 3.0F, 1.0F, 1.0F);
+            g.quad(groundCenter, new Vector3f(runeR, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, runeR), CYAN[0], CYAN[1], CYAN[2], rFade * 0.85F);
+            g.end();
+         }
+
+         float rOuter = this.half * 2.02F * FxMath.easeOutCubic(after);
+         float rMid = this.half * 1.48F * FxMath.easeOutCubic(after);
+         float ringFade = (1.0F - after) * (1.0F - after * 0.35F);
+         g.begin(Style.RING, 7.2F * ringFade, 0.0F, 0.95F, 0.022F, 0.0F, 0.0F);
          g.quad(groundCenter, new Vector3f(rOuter, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, rOuter), CYAN[0], CYAN[1], CYAN[2], ringFade);
-         g.quad(groundCenter, new Vector3f(rMid, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, rMid), WHITE[0], WHITE[1], WHITE[2], ringFade * ringFade);
          g.end();
-         g.begin(Style.RING, 7.0F * ringFade, 0.0F, 0.92F, 0.055F, 16.0F, -1.6F);
-         g.quad(groundCenter, new Vector3f(rInner, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, rInner), VIOLET[0], VIOLET[1], VIOLET[2], ringFade * 0.9F);
+         g.begin(Style.RING, 6.2F * ringFade, 0.0F, 0.94F, 0.026F, 24.0F, -1.8F);
+         g.quad(groundCenter, new Vector3f(rMid, 0.0F, 0.0F), new Vector3f(0.0F, 0.0F, rMid), GOLD[0], GOLD[1], GOLD[2], ringFade * 0.92F);
          g.end();
-
-         // 8e. 炸裂赤道双倾斜 3D 立体星环（自爆心急速甩出并渐细消散）
-         float tRing3d = FxMath.window(a, this.reckoningAge, this.reckoningAge + 26.0F);
-         if (tRing3d < 1.0F) {
-            float r3d = this.coreMax * 0.6F + this.half * 1.38F * FxMath.easeOutCubic(tRing3d);
-            float tube = Math.max(0.12F, this.coreMax * 0.28F * (1.0F - tRing3d * 0.72F));
-            float a3d = (1.0F - tRing3d) * (1.0F - tRing3d);
-            Vector3f n1 = new Vector3f(0.28F, 0.94F, 0.18F).normalize();
-            Vector3f n2 = new Vector3f(-0.34F, 0.88F, -0.32F).normalize();
-            g.begin(Style.RIBBON, 10.5F * a3d, 0.35F, 4.0F, 8.0F, 14.0F, 0.75F);
-            g.torus(blastCenter, n1, r3d, tube, 36, 6, a * 0.12F, CYAN[0], CYAN[1], CYAN[2], a3d);
-            g.torus(blastCenter, n2, r3d * 0.82F, tube * 0.85F, 34, 6, -a * 0.1F, GOLD[0], GOLD[1], GOLD[2], a3d * 0.8F);
-            g.end();
-         }
 
          // 8f. 54 枚 3D 棱晶碎骸 HDR 锋刃与烧蚀溶解
          if (!this.blastShards.isEmpty()) {
@@ -1398,9 +1433,9 @@ public final class VacuumDecayFx extends FxInstance {
       float shockThickness = this.half * 0.085F;
       float flash = 0.0F;
       if (after > 0.0F && after < 1.0F) {
-         shockRadius = this.half * 2.05F * FxMath.easeOutCubic(after);
+         shockRadius = this.half * 2.02F * FxMath.easeOutCubic(after);
          shockStrength = (1.0F - after) * (1.0F - after);
-         flash = Math.max(0.0F, 1.0F - (a - this.reckoningAge) / 10.0F);
+         flash = Math.max(0.0F, 1.0F - (a - this.reckoningAge) / 6.0F);
       } else {
          float impShock = this.impactShock(a);
          if (impShock > 0.0F && impShock < 1.0F) {
@@ -1533,14 +1568,14 @@ public final class VacuumDecayFx extends FxInstance {
             screen.addFovKick(0.24F * k * k * att);
          }
 
-         // 胶片颗粒过曝爆闪（若关闭致盲闪白则温和封顶）
-         float flashCap = engineCfg.flashBlindnessEnabled.getValue() ? 0.90F : 0.40F;
-         float flash = Math.max(0.0F, 1.0F - t / 9.5F);
-         screen.addFlash(0xEFFBFF, flashCap * flash * flash * att, 1.35F);
-         screen.addAberration(1.48F * Math.max(0.0F, 1.0F - t / 18.0F) * att);
-         screen.addZoomBlur(0.95F * Math.max(0.0F, 1.0F - t / 14.0F) * att, coreUv);
-         screen.addDashBlur(0.65F * Math.max(0.0F, 1.0F - t / 12.0F) * att, coreUv);
-         screen.addBloomBoost(1.65F * Math.max(0.0F, 1.0F - t / 15.0F) * att);
+         // 精准短促过曝瞬闪（仅前 4.5 tick 爆发，随后瞬间还清高对比星渊画面，彻底杜绝惨白糊屏！）
+         float flashCap = engineCfg.flashBlindnessEnabled.getValue() ? 0.56F : 0.30F;
+         float flash = Math.max(0.0F, 1.0F - t / 4.5F);
+         screen.addFlash(0xE8F9FF, flashCap * flash * flash * att, 0.72F);
+         screen.addAberration(1.22F * Math.max(0.0F, 1.0F - t / 15.0F) * att);
+         screen.addZoomBlur(0.72F * Math.max(0.0F, 1.0F - t / 11.0F) * att, coreUv);
+         screen.addDashBlur(0.55F * Math.max(0.0F, 1.0F - t / 10.0F) * att, coreUv);
+         screen.addBloomBoost(0.62F * Math.max(0.0F, 1.0F - t / 12.0F) * att);
       }
    }
 
