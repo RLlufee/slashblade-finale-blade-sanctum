@@ -1,0 +1,24 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
+  "vertex": "annihilationblade:st_screen",
+  "fragment": "annihilationblade:st_exposure",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    { "name": "Sampler0" },
+    { "name": "Sampler1" },
+    { "name": "Sampler2" },
+    { "name": "Sampler3" }
+  ],
+  "uniforms": [
+    { "name": "HeavyUvMax", "type": "float", "count": 2, "values": [1.0, 1.0] },
+    { "name": "AdaptParams", "type": "float", "count": 4, "values": [0.016, 0.15, 0.60, 0.0] },
+    { "name": "ExposureBounds", "type": "float", "count": 4, "values": [0.45, 0.38, 0.55, 0.0] },
+    { "name": "SourceFlags", "type": "float", "count": 4, "values": [0.0, 0.0, 0.0, 0.0] }
+  ]
+}

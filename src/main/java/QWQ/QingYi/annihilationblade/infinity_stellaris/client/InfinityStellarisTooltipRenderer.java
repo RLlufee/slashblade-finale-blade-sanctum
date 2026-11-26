@@ -948,7 +948,10 @@ public final class InfinityStellarisTooltipRenderer {
       activeQuadBatchHasVertices = false;
       if (!hasVertices) {
          if (builder.building()) {
-            builder.discard();
+            BufferBuilder.RenderedBuffer stray = builder.endOrDiscardIfEmpty();
+            if (stray != null) {
+               stray.release();
+            }
          }
          return;
       }

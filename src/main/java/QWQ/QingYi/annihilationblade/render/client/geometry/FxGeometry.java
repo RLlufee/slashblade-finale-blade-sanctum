@@ -9,6 +9,7 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat.Mode;
 import java.util.List;
+import javax.annotation.Nullable;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -73,6 +74,8 @@ public final class FxGeometry {
 
    private final FxFrame frame;
    private final boolean bodyPass;
+   @Nullable
+   private final ShaderInstance customShader;
    private BufferBuilder builder;
    private Style style;
    private float emission;
@@ -100,12 +103,17 @@ public final class FxGeometry {
    private final Vector3f cubePPP = new Vector3f();
 
    public FxGeometry(FxFrame frame) {
-      this(frame, false);
+      this(frame, false, null);
    }
 
    public FxGeometry(FxFrame frame, boolean bodyPass) {
+      this(frame, bodyPass, null);
+   }
+
+   public FxGeometry(FxFrame frame, boolean bodyPass, @Nullable ShaderInstance customShader) {
       this.frame = frame;
       this.bodyPass = bodyPass;
+      this.customShader = customShader;
    }
 
    public FxFrame frame() {
@@ -181,7 +189,7 @@ public final class FxGeometry {
       BufferBuilder current = this.builder;
       this.builder = null;
       BufferBuilder.RenderedBuffer rendered = current.end();
-      ShaderInstance shader = FxShaders.world;
+      ShaderInstance shader = this.customShader != null ? this.customShader : FxShaders.world;
       if (this.batchVertices == 0 || shader == null) {
          rendered.release();
          return;

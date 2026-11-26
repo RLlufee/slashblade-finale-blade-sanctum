@@ -368,5 +368,6 @@
   "config.annihilationblade.stellaris_disable_heavy_passes_with_shader_pack.tooltip": "Skips heavy raymarched offscreen passes while Iris/Oculus shaders are active, keeping lightweight geometry visuals.",
   "message.annihilationblade.vacuum_decay_cooldown": "§bVacuum Decay Collapse§8: §7Cooldown §f%s§7s remaining",
   "config.annihilationblade.blade_fullbright_vision": "Blade Fullbright Vision",
-  "config.annihilationblade.blade_fullbright_vision.tooltip": "Enables fullbright vision while carrying Annihilation Blade or Infinity Stellaris; automatically yields during Stellaris night-steal/dimming setpieces and shader packs to preserve deep-space contrast."
+  "config.annihilationblade.blade_fullbright_vision.tooltip": "Enables fullbright vision while carrying Annihilation Blade or Infinity Stellaris; automatically yields during Stellaris night-steal/dimming setpieces and shader packs to preserve deep-space contrast.",
+  "message.annihilationblade.stellaris.impact_full_requires_ack": "§b[Stellaris Engine] §eFull impact frames contain high-frequency polarity inversions (photosensitivity risk) and fell back to Safe mode. Check 'Full Impact Warning Acknowledged' in client config to unlock Full mode."
 }

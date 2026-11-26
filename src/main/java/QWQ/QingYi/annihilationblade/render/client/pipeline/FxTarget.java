@@ -16,15 +16,17 @@ import org.lwjgl.opengl.GL30;
  * 创建后再把颜色纹理重新分配为浮点格式；帧缓冲附件引用的是纹理名，因此无需重新挂接。
  */
 @OnlyIn(Dist.CLIENT)
-final class FxTarget {
-   enum Format {
+public final class FxTarget {
+   public enum Format {
       RGBA8(GL11.GL_RGBA8, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE),
       RGBA16F(GL30.GL_RGBA16F, GL11.GL_RGBA, GL11.GL_FLOAT),
+      RG16F(GL30.GL_RG16F, GL30.GL_RG, GL11.GL_FLOAT),
+      R16F(GL30.GL_R16F, GL11.GL_RED, GL11.GL_FLOAT),
       R32F(GL30.GL_R32F, GL11.GL_RED, GL11.GL_FLOAT);
 
-      final int internal;
-      final int format;
-      final int type;
+      public final int internal;
+      public final int format;
+      public final int type;
 
       Format(int internal, int format, int type) {
          this.internal = internal;
@@ -36,12 +38,12 @@ final class FxTarget {
    private final Format format;
    private TextureTarget target;
 
-   FxTarget(Format format) {
+   public FxTarget(Format format) {
       this.format = format;
    }
 
    /** 确保尺寸匹配；返回 true 表示发生了重建。 */
-   boolean ensure(int width, int height) {
+   public boolean ensure(int width, int height) {
       width = Math.max(1, width);
       height = Math.max(1, height);
       if (this.target != null && this.target.width == width && this.target.height == height) {
@@ -82,36 +84,36 @@ final class FxTarget {
       }
    }
 
-   void bindWrite() {
+   public void bindWrite() {
       this.target.bindWrite(true);
    }
 
-   void clear() {
+   public void clear() {
       this.target.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
       this.target.clear(Minecraft.ON_OSX);
    }
 
-   int texture() {
+   public int texture() {
       return this.target == null ? 0 : this.target.getColorTextureId();
    }
 
-   int framebuffer() {
+   public int framebuffer() {
       return this.target == null ? 0 : this.target.frameBufferId;
    }
 
-   int width() {
+   public int width() {
       return this.target == null ? 1 : this.target.width;
    }
 
-   int height() {
+   public int height() {
       return this.target == null ? 1 : this.target.height;
    }
 
-   boolean ready() {
+   public boolean ready() {
       return this.target != null;
    }
 
-   void destroy() {
+   public void destroy() {
       if (this.target != null) {
          RenderSystem.assertOnRenderThread();
          this.target.destroyBuffers();

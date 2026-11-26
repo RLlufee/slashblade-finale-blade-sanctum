@@ -11,6 +11,8 @@
     "LoliBladeServerPlayerMixin",
     "LoliBladeEntityMixin"
   ],
-  "client": [],
+  "client": [
+    "StellarisLevelRendererMixin"
+  ],
   "server": []
 }

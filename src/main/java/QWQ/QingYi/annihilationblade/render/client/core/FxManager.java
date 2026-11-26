@@ -3,6 +3,7 @@ package QWQ.QingYi.annihilationblade.render.client.core;
 import QWQ.QingYi.annihilationblade.Annihilationblade;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
 import QWQ.QingYi.annihilationblade.render.client.pipeline.FxPipeline;
+import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisManager;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -128,6 +129,7 @@ public final class FxManager {
       }
       Minecraft minecraft = Minecraft.getInstance();
       ClientLevel level = minecraft.level;
+      StellarisManager.onClientTick(level, minecraft.isPaused());
       if (level != lastLevel) {
          // 换维度/重进世界：旧世界的特效全部作废
          lastLevel = level;
@@ -184,7 +186,10 @@ public final class FxManager {
          }
       } else if (stage == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
          // 光影包启用时 AFTER_WEATHER 仍在光影内部 FBO 中，需跳过此处并延后到 AFTER_LEVEL 再抓取已回写的主深度
-         if (!ACTIVE.isEmpty() && matricesCaptured && !FxCompat.shadowPass() && !FxCompat.shaderPackActive() && FxPipeline.INSTANCE.active() && hasVisible(event.getCamera().getPosition())) {
+         Vec3 camPos = event.getCamera().getPosition();
+         boolean needFxDepth = !ACTIVE.isEmpty() && FxPipeline.INSTANCE.active() && hasVisible(camPos);
+         boolean needStellarisDepth = StellarisManager.hasWorkToRender(camPos);
+         if ((needFxDepth || needStellarisDepth) && matricesCaptured && !FxCompat.shadowPass() && !FxCompat.shaderPackActive()) {
             FxPipeline.INSTANCE.captureDepth();
          }
       } else if (stage == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
@@ -192,6 +197,7 @@ public final class FxManager {
             renderFrame(event.getCamera(), event.getPartialTick());
          } finally {
             matricesCaptured = false;
+            FxPipeline.INSTANCE.endFrame();
          }
       }
    }
@@ -199,7 +205,7 @@ public final class FxManager {
    private static void renderFrame(Camera camera, float partialTick) {
       shake = 0.0F;
       fovKick = 0.0F;
-      if (ACTIVE.isEmpty() || !matricesCaptured || !FxPipeline.INSTANCE.active()) {
+      if (!matricesCaptured) {
          return;
       }
       Minecraft minecraft = Minecraft.getInstance();
@@ -207,26 +213,44 @@ public final class FxManager {
       if (level == null) {
          return;
       }
+      boolean runOld = !ACTIVE.isEmpty() && FxPipeline.INSTANCE.active();
+      boolean runStellaris = StellarisManager.hasWorkToRender(camera.getPosition());
+      if (!runOld && !runStellaris) {
+         StellarisManager.markIdleFrame();
+         // 零星穹特效时允许在空闲帧分摊 1×1 着色器预热
+         QWQ.QingYi.annihilationblade.stellaris.engine.StellarisPipeline.INSTANCE.tickWarmupIfIdle();
+         return;
+      }
+
       Vec3 cameraPos = camera.getPosition();
       float time = ((level.getGameTime() % 72000L) + partialTick) / 20.0F;
       FxFrame frame = new FxFrame(
          level, cameraPos, partialTick, time, VIEW, PROJECTION, camera.getLeftVector(), camera.getUpVector(),
          minecraft.getMainRenderTarget().width, minecraft.getMainRenderTarget().height
       );
-      List<FxInstance> visible = new ArrayList<>();
-      SCREEN.reset();
-      float strongestShake = 0.0F;
-      for (FxInstance instance : ACTIVE) {
-         if (instance.focus().distanceTo(cameraPos) <= instance.cullDistance()) {
-            visible.add(instance);
-            instance.screen(frame, SCREEN);
-            strongestShake = Math.max(strongestShake, instance.shake(frame));
+
+      if (runOld) {
+         List<FxInstance> visible = new ArrayList<>();
+         SCREEN.reset();
+         float strongestShake = 0.0F;
+         for (FxInstance instance : ACTIVE) {
+            if (instance.focus().distanceTo(cameraPos) <= instance.cullDistance()) {
+               visible.add(instance);
+               instance.screen(frame, SCREEN);
+               strongestShake = Math.max(strongestShake, instance.shake(frame));
+            }
+         }
+         shake = strongestShake;
+         fovKick = SCREEN.fovKick;
+         if (!visible.isEmpty()) {
+            FxPipeline.INSTANCE.render(frame, visible, SCREEN);
          }
       }
-      shake = strongestShake;
-      fovKick = SCREEN.fovKick;
-      if (!visible.isEmpty()) {
-         FxPipeline.INSTANCE.render(frame, visible, SCREEN);
+
+      if (runStellaris) {
+         StellarisManager.renderFrame(frame);
+      } else {
+         StellarisManager.markIdleFrame();
       }
    }
 
@@ -245,14 +269,16 @@ public final class FxManager {
       out[2] += (float)Math.sin(t * 29.0 + 0.7) * 2.6F * amount;
    }
 
-   /** 上一帧特效给出的视野冲击比例。 */
+   /** 上一帧特效给出的视野冲击比例（合并旧管线与星穹引擎）。 */
    static float fovKick() {
-      return fovKick;
+      float sKick = StellarisManager.fovKick();
+      return Math.abs(sKick) > Math.abs(fovKick) ? sKick : fovKick;
    }
 
    @SubscribeEvent
    public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
       clear();
       FxPipeline.INSTANCE.release();
+      StellarisManager.onLoggingOut();
    }
 }

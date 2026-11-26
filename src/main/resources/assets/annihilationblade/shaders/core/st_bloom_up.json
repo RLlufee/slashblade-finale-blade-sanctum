@@ -1,0 +1,20 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
+  "vertex": "annihilationblade:st_screen",
+  "fragment": "annihilationblade:st_bloom_up",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    { "name": "Sampler0" },
+    { "name": "Sampler1" }
+  ],
+  "uniforms": [
+    { "name": "TexelSize", "type": "float", "count": 2, "values": [0.001, 0.001] },
+    { "name": "BlendParams", "type": "float", "count": 2, "values": [1.0, 0.78] }
+  ]
+}

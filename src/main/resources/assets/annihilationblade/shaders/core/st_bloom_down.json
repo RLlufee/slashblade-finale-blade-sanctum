@@ -1,0 +1,23 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
+  "vertex": "annihilationblade:st_screen",
+  "fragment": "annihilationblade:st_bloom_down",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [
+    { "name": "Sampler0" },
+    { "name": "Sampler1" }
+  ],
+  "uniforms": [
+    { "name": "TexelSize", "type": "float", "count": 2, "values": [0.001, 0.001] },
+    { "name": "HeavyUvMax", "type": "float", "count": 2, "values": [1.0, 1.0] },
+    { "name": "Prefilter", "type": "float", "count": 1, "values": [0.0] },
+    { "name": "PrimaryWeight", "type": "float", "count": 1, "values": [1.0] },
+    { "name": "EmissiveWeight", "type": "float", "count": 1, "values": [0.0] }
+  ]
+}

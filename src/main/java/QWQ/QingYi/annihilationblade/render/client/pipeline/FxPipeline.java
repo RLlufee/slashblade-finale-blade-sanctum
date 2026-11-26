@@ -117,17 +117,42 @@ public final class FxPipeline {
     * 因此先切一次不透明再切回标准混合，确保此后全部 20 个 {@code fx_*.json} 的 {@code shader.apply()}
     * 命中相等缓存成为空操作，不再覆盖 {@code RenderSystem} 显式设置的禁用/预乘/加法混合状态。
     */
-   private static void syncBlendCache() {
+   public static void syncBlendCache() {
       OPAQUE_BLEND.apply();
       STANDARD_BLEND.apply();
+   }
+
+   /**
+    * 供星穹引擎（Stellaris Engine）跨包共享本帧已捕获的 R32F 深度纹理。
+    * 独立于旧管线 {@code failed} 熔断标志，防止旧管线偶发异常连坐星穹引擎；捕获失败时返回 0。
+    */
+   public int ensureSharedDepthTexture() {
+      if (!this.depthCaptured) {
+         this.captureDepthInternal(true);
+      }
+      return this.depthCaptured ? this.depth.texture() : 0;
+   }
+
+   /** 当前帧是否已经完成 R32F 深度捕获。 */
+   public boolean isDepthCaptured() {
+      return this.depthCaptured;
+   }
+
+   /** 在整帧（含星穹引擎）全部渲染结束后归零本帧深度捕获标记。 */
+   public void endFrame() {
+      this.depthCaptured = false;
    }
 
    /**
     * 复制当前主深度。会完整恢复调用前的帧缓冲绑定、混合因子与视口（Fabulous 下此时绑定的是天气目标）。
     */
    public void captureDepth() {
+      this.captureDepthInternal(false);
+   }
+
+   private void captureDepthInternal(boolean allowWhenOldFailed) {
       ShaderInstance shader = FxShaders.depthCopy;
-      if (shader == null || this.failed) {
+      if (shader == null || (!allowWhenOldFailed && this.failed)) {
          return;
       }
       RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
@@ -152,7 +177,11 @@ public final class FxPipeline {
          this.fullscreen(shader);
          this.depthCaptured = true;
       } catch (Throwable throwable) {
-         this.fail("depth capture", throwable);
+         if (!allowWhenOldFailed) {
+            this.fail("depth capture", throwable);
+         } else {
+            Annihilationblade.LOGGER.error("[Stellaris Engine] Shared depth capture failed.", throwable);
+         }
       } finally {
          RenderSystem.setShaderTexture(0, savedTexture);
          guard.restore();
@@ -383,10 +412,13 @@ public final class FxPipeline {
       } catch (Throwable throwable) {
          this.fail("frame", throwable);
       } finally {
-         // 若某特效在 FxGeometry.begin()~end() 间抛异常，必须丢弃未闭合的全局 BufferBuilder，防止后续原版渲染抛 Already building! 硬崩
+         // 若某特效在 FxGeometry.begin()~end() 间抛异常，必须调用 endOrDiscardIfEmpty() 真正重置 building=false，防止后续原版渲染抛 Already building! 硬崩
          BufferBuilder globalBuilder = Tesselator.getInstance().getBuilder();
          if (globalBuilder.building()) {
-            globalBuilder.discard();
+            BufferBuilder.RenderedBuffer stray = globalBuilder.endOrDiscardIfEmpty();
+            if (stray != null) {
+               stray.release();
+            }
          }
          modelView.popPose();
          RenderSystem.applyModelViewMatrix();
@@ -396,7 +428,6 @@ public final class FxPipeline {
          }
          guard.restore();
          main.bindWrite(true);
-         this.depthCaptured = false;
       }
    }
 
@@ -513,8 +544,8 @@ public final class FxPipeline {
    /**
     * 读取真实 GL 状态（含分离混合因子）并在结束时通过 RenderSystem 恢复，保证原版状态缓存与真实状态一致。
     */
-   private record StateGuard(boolean blend, boolean depthTest, boolean cull, boolean depthMask, int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
-      static StateGuard capture() {
+   public record StateGuard(boolean blend, boolean depthTest, boolean cull, boolean depthMask, int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) {
+      public static StateGuard capture() {
          return new StateGuard(
             GL11.glIsEnabled(GL11.GL_BLEND),
             GL11.glIsEnabled(GL11.GL_DEPTH_TEST),
@@ -527,7 +558,7 @@ public final class FxPipeline {
          );
       }
 
-      void restore() {
+      public void restore() {
          RenderSystem.blendFuncSeparate(this.srcRgb, this.dstRgb, this.srcAlpha, this.dstAlpha);
          if (this.blend) {
             RenderSystem.enableBlend();

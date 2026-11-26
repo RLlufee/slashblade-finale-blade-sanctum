@@ -368,5 +368,6 @@
   "config.annihilationblade.stellaris_disable_heavy_passes_with_shader_pack.tooltip": "偵測到 Iris/Oculus 光影包時跳過黑洞光線步進等重型離屏通道，僅保留輕量化幾何演出。",
   "message.annihilationblade.vacuum_decay_cooldown": "§b真空衰變·坍縮§8：§7冷卻剩餘 §f%s§7 秒",
   "config.annihilationblade.blade_fullbright_vision": "持刀永晝視界",
-  "config.annihilationblade.blade_fullbright_vision.tooltip": "攜帶湮滅之刃或無盡星空時啟用極光永晝視界；在無盡星空奪夜/世界壓暗演出與光影包下會自動平滑退讓，保護深空暗部對比度。"
+  "config.annihilationblade.blade_fullbright_vision.tooltip": "攜帶湮滅之刃或無盡星空時啟用極光永晝視界；在無盡星空奪夜/世界壓暗演出與光影包下會自動平滑退讓，保護深空暗部對比度。",
+  "message.annihilationblade.stellaris.impact_full_requires_ack": "§b[星穹引擎] §e完整檔衝擊幀包含高頻極性反轉閃爍，存在光敏風險；已在本次自動回落至安全檔。若確認無礙，請在用戶端設定中勾選「已確認完整衝擊幀光敏提示」。"
 }
