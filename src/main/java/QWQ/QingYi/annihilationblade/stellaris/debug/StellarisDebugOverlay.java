@@ -8,8 +8,10 @@ import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisManager;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisPipeline;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisProceduralAssets;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisQuality;
+import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisRuneCache;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisShaders;
 import QWQ.QingYi.annihilationblade.stellaris.optics.AudioSilencer;
+import QWQ.QingYi.annihilationblade.stellaris.particles.StellarisTboShaders;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -25,7 +27,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
 /**
- * 星穹引擎实时 GPU 性能与管线状态悬浮 HUD（通过 {@code /stellaris debug overlay on|off} 开关，默认关闭零开销）。
+ * 星穹引擎实时 GPU 性能与管线状态悬浮 HUD（Step 1.6 升级版，{@code /stellaris debug overlay on|off}）。
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = Annihilationblade.MODID, value = Dist.CLIENT)
@@ -58,12 +60,13 @@ public final class StellarisDebugOverlay {
       StellarisQuality quality = pipe.quality();
       StellarisQuality.Spec spec = quality.effectiveSpec();
       StellarisGpuTimer timer = pipe.gpuTimer();
+      StellarisRuneCache cache = pipe.targets().runeCache;
 
       List<String> lines = new ArrayList<>(14);
-      lines.add("§b§l[Stellaris Engine Debug]");
+      lines.add("§b§l[Stellaris Engine v3.5 Debug]");
       lines.add(String.format(
          Locale.ROOT,
-         "§7Preset: §f%s§7 (cfg=%s, drop=%d) | HeavyScale: §b%.2fx",
+         "§7Preset: §f%s§7 (cfg=%s, drop=%d) | Scale: §b%.2fx",
          spec.preset().name(),
          quality.configuredPreset().name(),
          quality.adaptiveDropLevels(),
@@ -71,18 +74,26 @@ public final class StellarisDebugOverlay {
       ));
       lines.add(String.format(
          Locale.ROOT,
-         "§7Active: §f%s§7 | MRT: §f%s§7 | Warmup: §f%s",
+         "§7Active: %s§7 | MRT: §f%s§7 | Relief: §f%s",
          pipe.active() ? "§aON" : "§cOFF",
          StellarisShaders.mrtDiagnostic(),
+         StellarisShaders.reliefDiagnostic()
+      ));
+      lines.add(String.format(
+         Locale.ROOT,
+         "§7RuneCache: %s§7 | TBO: §f%s§7 | Warmup: §f%s",
+         cache.ready() ? ("§a" + cache.size() + "²") : "§eLAZY",
+         StellarisTboShaders.INSTANCE.isReady() ? "§aGL32" : "§eFALLBACK",
          pipe.warmup().isCompleted() ? "§aDONE" : (pipe.warmup().warmedCount() + "/" + pipe.warmup().totalCount())
       ));
       lines.add(String.format(
          Locale.ROOT,
-         "§7Assets(3D/BN/BB): §f%s§7 | Iris: §f%s§7 | Fx: §b%d§7 | Part: §b%d",
+         "§7Assets: %s§7 | ShaderPack: §f%s§7 | Fx: §b%d§7 | Part: §b%d§7 | Rib: §b%d",
          StellarisProceduralAssets.INSTANCE.ready() ? "§aREADY" : "§eBAKING",
          FxCompat.shaderPackActive() ? "ON" : "OFF",
          StellarisManager.activeEffectCount(),
-         StellarisManager.particles().activeCount()
+         StellarisManager.particles().activeCount(),
+         StellarisManager.ribbons().segmentCount()
       ));
       lines.add(String.format(
          Locale.ROOT,
@@ -94,7 +105,7 @@ public final class StellarisDebugOverlay {
       lines.add(String.format(
          Locale.ROOT,
          "§eTotal (%s): §f%.2f ms §7/ budget %.1f ms",
-         timer.isGpuBacked() ? "GPU" : "CPU",
+         timer.isGpuBacked() ? "GL33 TS" : "CPU",
          timer.smoothedTotalMs(),
          spec.frameBudgetMs()
       ));

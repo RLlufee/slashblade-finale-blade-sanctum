@@ -2,18 +2,22 @@
 
 #moj_import <annihilationblade:st_common.glsl>
 
-// 全 GPU 1x1 异步自动曝光（基准 = 1.0 电影防过曝压光型）：
-//  - 开泛光时：同步测光线性场景 + 泛光最低级；
-//  - 关泛光时：自动改测线性场景 + hdrGeo + MRT Attachment 2 纯自发光，确保开/关泛光压光曲线高度一致！
-//  - 白昼雪地/晴空（无高能特效）稳定保持 1.0 不误暗，高能爆发瞬间迅速（0.15s）收缩光圈，退去后缓慢（0.60s）暗适应回亮。
+// 全 GPU 1x1 异步自动曝光（Step 1.6 四源一致测光版，基准 = 1.0 电影防过曝压光型）：
+//  - 开泛光时：同步测光线性场景 + 泛光最低级（已涵括四大自发光源）；
+//  - 关泛光时：直测线性场景 + hdrGeo + HeavyEmit + 3D Relief + SceneEmit，确保开/关泛光压光曲线高度一致！
 uniform sampler2D Sampler0; // 线性 HDR 场景
 uniform sampler2D Sampler1; // 泛光最低级（SourceFlags.x > 0.5）或 hdrGeo（SourceFlags.x <= 0.5）
 uniform sampler2D Sampler2; // 上一帧 1x1 RG16F 状态（r=exposure, g=adaptedLuma）
-uniform sampler2D Sampler3; // Heavy MRT Attachment 2 纯自发光（关泛光回退测光用）
-uniform vec2 HeavyUvMax;    // 动态分辨率 MRT 有效 UV 上限
-uniform vec4 AdaptParams;   // x=dt, y=tauDarken, z=tauBrighten, w=initialized (>0.5)
-uniform vec4 ExposureBounds;// x=起始压光阈值 L0, y=minExposure, z=压光斜率 k, w=保留
-uniform vec4 SourceFlags;   // x=hasBloom, y=hasHdrGeo, z=hasHeavyMrt, w=保留
+uniform sampler2D Sampler3; // Heavy MRT Attachment 2 纯自发光
+uniform sampler2D Sampler4; // 3D 浮雕法阵 HDR 辐射层
+uniform sampler2D Sampler5; // Stage 4 SceneEmit 纯自发光层
+
+uniform vec2 HeavyUvMax;
+uniform vec2 ReliefUvMax;
+uniform vec4 AdaptParams;    // x=dt, y=tauDarken, z=tauBrighten, w=initialized (>0.5)
+uniform vec4 ExposureBounds; // x=起始压光阈值 L0, y=minExposure, z=压光斜率 k, w=保留
+uniform vec4 SourceFlags;    // x=hasBloom, y=hasHdrGeo, z=hasHeavyMrt, w=hasRelief
+uniform vec4 ExtraFlags;     // x=hasSceneEmit, yzw=保留
 
 in vec2 texCoord;
 
@@ -21,6 +25,7 @@ out vec4 fragColor;
 
 void main() {
     vec2 safeMax = clamp(HeavyUvMax, vec2(0.05), vec2(1.0));
+    vec2 safeR = clamp(ReliefUvMax, vec2(0.05), vec2(1.0));
     float lumaSum = 0.0;
     float weightSum = 0.0;
     for (int y = 0; y < 4; y++) {
@@ -41,6 +46,13 @@ void main() {
                 if (SourceFlags.z > 0.5) {
                     vec2 hUv = clamp(suv * safeMax, vec2(0.0005), max(vec2(0.0005), safeMax - vec2(0.001)));
                     directEmit += max(stSanitize(texture(Sampler3, hUv).rgb), vec3(0.0));
+                }
+                if (SourceFlags.w > 0.5) {
+                    vec2 rUv = clamp(suv * safeR, vec2(0.0005), max(vec2(0.0005), safeR - vec2(0.001)));
+                    directEmit += max(stSanitize(texture(Sampler4, rUv).rgb), vec3(0.0));
+                }
+                if (ExtraFlags.x > 0.5) {
+                    directEmit += max(stSanitize(texture(Sampler5, suv).rgb), vec3(0.0));
                 }
                 emitLuma = min(stLuma(directEmit), 16.0) * 0.85;
             }
@@ -66,7 +78,6 @@ void main() {
     float alpha = 1.0 - exp(-dt / tau);
     float adaptedLuma = mix(prevLuma, targetLuma, alpha);
 
-    // 基准 1.0 压光曲线：正常场景（含白昼雪地/晴空）严格 = 1.0，仅当高亮爆发超过 L0 时顺滑收缩光圈
     float excess = max(adaptedLuma - ExposureBounds.x, 0.0);
     float rawExposure = 1.0 / (1.0 + excess * max(ExposureBounds.z, 0.1));
     float exposure = clamp(rawExposure, clamp(ExposureBounds.y, 0.20, 1.0), 1.0);

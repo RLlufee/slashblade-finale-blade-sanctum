@@ -1,0 +1,14 @@
+{
+  "blend": {
+    "func": "add",
+    "srcrgb": "srcalpha",
+    "dstrgb": "1-srcalpha"
+  },
+  "vertex": "annihilationblade:st_screen",
+  "fragment": "annihilationblade:st_rune_cache",
+  "attributes": [
+    "Position"
+  ],
+  "samplers": [],
+  "uniforms": []
+}

@@ -2,7 +2,6 @@ package QWQ.QingYi.annihilationblade.stellaris.engine;
 
 import QWQ.QingYi.annihilationblade.Annihilationblade;
 import QWQ.QingYi.annihilationblade.render.client.pipeline.FxPipeline;
-import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.Collections;
 import java.util.List;
@@ -10,13 +9,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL12;
-import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL30;
 
 /**
- * 星穹着色器 1×1 离屏分帧预热器（完整保存/恢复 0..11 全部 12 个纹理槽位与 3D 纹理状态，零泄漏）。
+ * 星穹着色器 1×1 离屏分帧预热器（Step 1.6：全对称 {@link StellarisGlGuard} 隔离，安全预热含 {@code st_rune_cache} / {@code st_relief} 在内的全部着色器）。
  */
 @OnlyIn(Dist.CLIENT)
 public final class StellarisWarmup {
@@ -61,20 +56,7 @@ public final class StellarisWarmup {
 
       StellarisProceduralAssets.INSTANCE.ensureUploaded();
 
-      int prevDraw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-      int prevRead = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
-      int prevActiveTex = GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-      GL13.glActiveTexture(GL13.GL_TEXTURE0 + StellarisPipeline.NOISE3D_TEXTURE_UNIT);
-      int prevNoise3dBinding = GL11.glGetInteger(GL12.GL_TEXTURE_BINDING_3D);
-      GL13.glActiveTexture(prevActiveTex);
-      int[] viewport = new int[4];
-      GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
-      FxPipeline.StateGuard guard = FxPipeline.StateGuard.capture();
-      int[] savedTex = new int[12];
-      for (int i = 0; i < savedTex.length; i++) {
-         savedTex[i] = RenderSystem.getShaderTexture(i);
-      }
-
+      StellarisGlGuard guard = StellarisGlGuard.capture();
       try {
          FxPipeline.syncBlendCache();
          this.warmupTarget.ensure(1, 1);
@@ -95,7 +77,10 @@ public final class StellarisWarmup {
          while (this.nextIndex < this.queue.size() && budget-- > 0) {
             ShaderInstance shader = this.queue.get(this.nextIndex++);
             if (shader != null) {
-               pipeline.drawWarmupDummy(shader);
+               if (shader == StellarisShaders.relief) {
+                  shader.safeGetUniform("ReliefConfig").set(0.0F, 1024.0F, 36.0F, 0.0F);
+               }
+               pipeline.drawWarmupDummy(shader, dummyTex);
             }
          }
 
@@ -109,16 +94,7 @@ public final class StellarisWarmup {
          this.warmupTarget.destroy();
          Annihilationblade.LOGGER.warn("[Stellaris Engine] Shader warmup aborted safely: {}", throwable.toString());
       } finally {
-         GL13.glActiveTexture(GL13.GL_TEXTURE0 + StellarisPipeline.NOISE3D_TEXTURE_UNIT);
-         GL11.glBindTexture(GL12.GL_TEXTURE_3D, prevNoise3dBinding);
-         GL13.glActiveTexture(prevActiveTex);
-         for (int i = 0; i < savedTex.length; i++) {
-            RenderSystem.setShaderTexture(i, savedTex[i]);
-         }
          guard.restore();
-         GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, prevDraw);
-         GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, prevRead);
-         GlStateManager._viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
       }
    }
 

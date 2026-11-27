@@ -11,13 +11,15 @@
   ],
   "samplers": [
     { "name": "Sampler0" },
-    { "name": "Sampler1" }
+    { "name": "Sampler1" },
+    { "name": "Sampler2" },
+    { "name": "Sampler3" }
   ],
   "uniforms": [
     { "name": "TexelSize", "type": "float", "count": 2, "values": [0.001, 0.001] },
     { "name": "HeavyUvMax", "type": "float", "count": 2, "values": [1.0, 1.0] },
+    { "name": "ReliefUvMax", "type": "float", "count": 2, "values": [1.0, 1.0] },
     { "name": "Prefilter", "type": "float", "count": 1, "values": [0.0] },
-    { "name": "PrimaryWeight", "type": "float", "count": 1, "values": [1.0] },
-    { "name": "EmissiveWeight", "type": "float", "count": 1, "values": [0.0] }
+    { "name": "LayerWeights", "type": "float", "count": 4, "values": [1.0, 0.0, 0.0, 0.0] }
   ]
 }

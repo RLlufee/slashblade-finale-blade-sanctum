@@ -3,12 +3,15 @@ package QWQ.QingYi.annihilationblade.stellaris.debug;
 import QWQ.QingYi.annihilationblade.Annihilationblade;
 import QWQ.QingYi.annihilationblade.config.ModConfig;
 import QWQ.QingYi.annihilationblade.render.client.core.FxCompat;
+import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisConfigSnapshot;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisGpuTimer;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisManager;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisPipeline;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisProceduralAssets;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisQuality;
+import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisRuneCache;
 import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisShaders;
+import QWQ.QingYi.annihilationblade.stellaris.particles.StellarisTboShaders;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -29,21 +32,14 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 
 /**
- * 星穹引擎纯客户端调试与实机验收指令：{@code /stellaris debug ...}
- * <ul>
- *   <li>{@code /stellaris debug status}：输出引擎激活状态、MRT 自检、AT ({@code viewArea}) 探测、纹理资产与各 Pass GPU 毫秒耗时；</li>
- *   <li>{@code /stellaris debug overlay on|off}：开关左上角实时 GPU 性能仪表盘；</li>
- *   <li>{@code /stellaris debug test <optics|bloom|streak|godrays|holdframe|impact_safe|impact_full|particles|silence|clouds>}：在前方召唤 Step 1 光学验收沙盒；</li>
- *   <li>{@code /stellaris debug preset <fallback|balanced|cinematic|ultimate|config>}：实时切换画质档对比；</li>
- *   <li>{@code /stellaris debug clear} / {@code reset}：清空沙盒实例或重置自适应/熔断器状态。</li>
- * </ul>
+ * 星穹引擎纯客户端调试与实机验收指令（Step 1.6）：{@code /stellaris debug ...}
  */
 @OnlyIn(Dist.CLIENT)
 @EventBusSubscriber(modid = Annihilationblade.MODID, value = Dist.CLIENT)
 public final class StellarisDebugCommand {
    private static final SuggestionProvider<CommandSourceStack> TEST_SUGGESTIONS = (ctx, builder) ->
       SharedSuggestionProvider.suggest(
-         new String[]{"optics", "scene", "bloom", "streak", "godrays", "holdframe", "impact_safe", "impact_full", "particles", "silence", "clouds"},
+         new String[]{"optics", "relief", "scene", "bloom", "streak", "godrays", "holdframe", "impact_safe", "impact_full", "particles", "silence", "clouds"},
          builder
       );
 
@@ -92,12 +88,12 @@ public final class StellarisDebugCommand {
                )
                .then(Commands.literal("clear").executes(ctx -> {
                   StellarisManager.clear();
-                  sendMsg("§b[Stellaris] §7已清空全部星穹活跃特效与粒子池。");
+                  sendMsg("§b[Stellaris] §7已清空全部星穹活跃特效、TBO 粒子与丝带池。");
                   return 1;
                }))
                .then(Commands.literal("reset").executes(ctx -> {
                   StellarisPipeline.INSTANCE.resetDiagnostics();
-                  sendMsg("§b[Stellaris] §a已重置熔断状态、自适应降档与自动曝光缓冲。");
+                  sendMsg("§b[Stellaris] §a已重置熔断状态、浮雕缓存、自适应降档与自动曝光缓冲。");
                   return 1;
                }))
             )
@@ -109,36 +105,44 @@ public final class StellarisDebugCommand {
       StellarisQuality quality = pipe.quality();
       StellarisQuality.Spec spec = quality.effectiveSpec();
       StellarisGpuTimer timer = pipe.gpuTimer();
+      StellarisRuneCache cache = pipe.targets().runeCache;
+      StellarisConfigSnapshot snap = StellarisConfigSnapshot.current();
 
-      sendMsg("§b§l========== Stellaris Engine Status ==========");
+      sendMsg("§b§l========== Stellaris Engine v3.5 (Step 1.6) ==========");
       sendMsg(String.format(
          Locale.ROOT,
-         "§7Engine: %s §7| CoreShaders: %s §7| FullOptics: %s §7| Failed: %s §7| HeavyDegraded: %s",
+         "§7Engine: %s §7| CoreShaders: %s §7| FullOptics: %s §7| Failed: %s §7| HeavyDeg: %s §7| ReliefDeg: %s",
          pipe.active() ? "§aACTIVE" : "§cINACTIVE",
          StellarisShaders.coreReady() ? "§aOK" : "§cNO",
          StellarisShaders.fullOpticsReady() ? "§aOK" : "§ePARTIAL",
          pipe.isFailed() ? "§cYES" : "§aNO",
-         pipe.isHeavyDegraded() ? "§eYES" : "§aNO"
+         pipe.isHeavyDegraded() ? "§eYES" : "§aNO",
+         pipe.isReliefDegraded() ? "§eYES" : "§aNO"
       ));
       sendMsg(String.format(
          Locale.ROOT,
-         "§7Preset: §f%s §7(config=%s, adaptiveDrop=%d) | HeavyScale: §b%.2fx §7| Budget: §e%.1f ms",
+         "§7Preset: §f%s §7(cfg=%s, drop=%d) | Scale: §b%.2fx §7| MaxPart: §b%d §7| Budget: §e%.1f ms",
          spec.preset().name(),
          quality.configuredPreset().name(),
          quality.adaptiveDropLevels(),
          quality.currentHeavyScale(),
+         spec.maxParticles(),
          spec.frameBudgetMs()
       ));
-      sendMsg("§7MRT 3-Attachment: §f" + StellarisShaders.mrtDiagnostic()
-         + " §7| Procedural(3D/BN/BB): " + (StellarisProceduralAssets.INSTANCE.ready() ? "§aREADY" : "§ePENDING")
+      sendMsg("§7MRT-3: §f" + StellarisShaders.mrtDiagnostic()
+         + " §7| Relief-2: §f" + StellarisShaders.reliefDiagnostic()
+         + " §7| RuneCache: §f" + (cache.ready() ? ("§a" + cache.size() + "²") : "§eLAZY"));
+      sendMsg("§7TBO Instanced: §f" + StellarisTboShaders.INSTANCE.diagnostic()
+         + " §7| Procedural(Curl3D/VC-BN/Planck-BB): " + (StellarisProceduralAssets.INSTANCE.ready() ? "§aREADY" : "§ePENDING")
          + " §7| Warmup: " + (pipe.warmup().isCompleted() ? "§aDONE" : (pipe.warmup().warmedCount() + "/" + pipe.warmup().totalCount())));
-      sendMsg("§7WorldCapture AT Probe: §f" + StellarisManager.probeViewAreaAccess()
-         + " §7| Iris/Oculus: §f" + (FxCompat.shaderPackActive() ? "ON" : "OFF"));
+      sendMsg("§7AT Probe: §f" + StellarisManager.probeViewAreaAccess()
+         + " §7| ShaderPack: §f" + (FxCompat.shaderPackActive() ? "ON" : "OFF")
+         + " §7| IrisHandDefer: §f" + (snap.irisDeferHandWithShaderPack() ? "ON" : "OFF"));
 
       StringBuilder timing = new StringBuilder(String.format(
          Locale.ROOT,
          "§eTimings (%s) Total=%.2f ms: §7",
-         timer.isGpuBacked() ? "GL33 GPU" : "CPU",
+         timer.isGpuBacked() ? "GL33 TS" : "CPU",
          timer.smoothedTotalMs()
       ));
       for (Map.Entry<StellarisGpuTimer.Stage, Float> e : timer.snapshotSmoothed().entrySet()) {
@@ -157,7 +161,7 @@ public final class StellarisDebugCommand {
       try {
          mode = StellarisDebugSandboxEffect.Mode.valueOf(modeArg.toUpperCase(Locale.ROOT));
       } catch (IllegalArgumentException ex) {
-         sendMsg("§c未知测试模式: " + modeArg + "（可用: optics, scene, bloom, streak, godrays, holdframe, impact_safe, impact_full, particles, silence, clouds）");
+         sendMsg("§c未知测试模式: " + modeArg + "（可用: optics, relief, scene, bloom, streak, godrays, holdframe, impact_safe, impact_full, particles, silence, clouds）");
          return 0;
       }
 
@@ -171,7 +175,7 @@ public final class StellarisDebugCommand {
       Vec3 look = player.getLookAngle().normalize();
       Vec3 pos = eye.add(look.scale(10.5));
       StellarisManager.add(new StellarisDebugSandboxEffect(mode, pos));
-      sendMsg("§b[Stellaris] §a已于前方 10.5 格生成 Step 1 光学验证沙盒：§f" + mode.name());
+      sendMsg("§b[Stellaris] §a已于前方 10.5 格生成 Step 1.6 实机验收沙盒：§f" + mode.name());
       return 1;
    }
 

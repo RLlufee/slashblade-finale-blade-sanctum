@@ -23,6 +23,6 @@
     { "name": "OutSize", "type": "float", "count": 2, "values": [960.0, 540.0] },
     { "name": "FrameMeta", "type": "float", "count": 4, "values": [0.0, 220.0, 28.0, 0.0] },
     { "name": "CoreSphere", "type": "float", "count": 4, "values": [0.0, 0.0, -8.0, 2.2] },
-    { "name": "CoreParams", "type": "float", "count": 4, "values": [1.0, 0.35, 0.0, 0.0] }
+    { "name": "CoreParams", "type": "float", "count": 4, "values": [1.0, 0.35, 1.65, 1.0] }
   ]
 }

@@ -1,5 +1,6 @@
 package QWQ.QingYi.annihilationblade.render.client.pipeline;
 
+import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisGlGuard;
 import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -69,18 +70,23 @@ public final class FxTarget {
    private void reformat() {
       int previousTex = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
       int previousDraw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-      GlStateManager._bindTexture(this.target.getColorTextureId());
-      GlStateManager._texImage2D(GL11.GL_TEXTURE_2D, 0, this.format.internal, this.target.width, this.target.height, 0, this.format.format, this.format.type, null);
-      GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, this.format == Format.R32F ? GL11.GL_NEAREST : GL11.GL_LINEAR);
-      GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, this.format == Format.R32F ? GL11.GL_NEAREST : GL11.GL_LINEAR);
-      GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL30.GL_CLAMP_TO_EDGE);
-      GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL30.GL_CLAMP_TO_EDGE);
-      GlStateManager._bindTexture(previousTex);
-      GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, this.target.frameBufferId);
-      int status = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
-      GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, previousDraw);
-      if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
-         throw new IllegalStateException("Incomplete FxTarget framebuffer for format " + this.format + ": 0x" + Integer.toHexString(status));
+      int prevPbo = StellarisGlGuard.unbindPixelUnpackBuffer();
+      try {
+         GlStateManager._bindTexture(this.target.getColorTextureId());
+         GlStateManager._texImage2D(GL11.GL_TEXTURE_2D, 0, this.format.internal, this.target.width, this.target.height, 0, this.format.format, this.format.type, null);
+         GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, this.format == Format.R32F ? GL11.GL_NEAREST : GL11.GL_LINEAR);
+         GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, this.format == Format.R32F ? GL11.GL_NEAREST : GL11.GL_LINEAR);
+         GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL30.GL_CLAMP_TO_EDGE);
+         GlStateManager._texParameter(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL30.GL_CLAMP_TO_EDGE);
+         GlStateManager._bindTexture(previousTex);
+         GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, this.target.frameBufferId);
+         int status = GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER);
+         GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, previousDraw);
+         if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            throw new IllegalStateException("Incomplete FxTarget framebuffer for format " + this.format + ": 0x" + Integer.toHexString(status));
+         }
+      } finally {
+         StellarisGlGuard.restorePixelUnpackBuffer(prevPbo);
       }
    }
 

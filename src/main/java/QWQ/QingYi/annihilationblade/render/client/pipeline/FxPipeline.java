@@ -28,10 +28,12 @@ import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
+import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisGlGuard;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL30;
+import org.lwjgl.opengl.GL33;
 
 /**
  * 专属渲染管线。每帧（仅在有可见特效时）执行：
@@ -165,7 +167,12 @@ public final class FxPipeline {
       GL11.glGetIntegerv(GL11.GL_VIEWPORT, viewport);
       StateGuard guard = StateGuard.capture();
       int savedTexture = RenderSystem.getShaderTexture(0);
+      boolean samplerSupported = StellarisGlGuard.supportsSamplerObjects();
+      int savedSampler0 = samplerSupported ? GL33.glGetIntegeri(GL33.GL_SAMPLER_BINDING, 0) : 0;
       try {
+         if (samplerSupported && savedSampler0 != 0) {
+            GL33.glBindSampler(0, 0);
+         }
          syncBlendCache();
          this.depth.ensure(main.width, main.height);
          this.depth.bindWrite();
@@ -183,6 +190,9 @@ public final class FxPipeline {
             Annihilationblade.LOGGER.error("[Stellaris Engine] Shared depth capture failed.", throwable);
          }
       } finally {
+         if (samplerSupported) {
+            GL33.glBindSampler(0, savedSampler0);
+         }
          RenderSystem.setShaderTexture(0, savedTexture);
          guard.restore();
          GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, previousDraw);

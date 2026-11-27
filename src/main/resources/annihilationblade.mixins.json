@@ -12,7 +12,10 @@
     "LoliBladeEntityMixin"
   ],
   "client": [
-    "StellarisLevelRendererMixin"
+    "StellarisLevelRendererMixin",
+    "StellarisGameRendererMixin",
+    "StellarisIrisHandMixin",
+    "StellarisLegacyIrisHandMixin"
   ],
   "server": []
 }

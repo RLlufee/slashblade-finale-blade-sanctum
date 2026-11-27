@@ -5,10 +5,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 /**
- * 星穹引擎 4 档画质规格表与 GPU 耗时自适应降档状态机。
- * <p>
- * 动态分辨率采用 4 档离散阶梯（{@code 1.00 / 0.85 / 0.72 / 0.60}）+ 冷却锁定 + 零显存重建视口缩放，
- * 彻底杜绝逐帧微小抖动引发的 FBO 重建卡顿死亡螺旋。
+ * 星穹引擎 4 档画质规格表与 GPU 耗时自适应降档状态机（Step 1.6：帧快照读取 + 16384 万级 TBO 粒子预算 + 3D 浮雕步进预算）。
  */
 @OnlyIn(Dist.CLIENT)
 public final class StellarisQuality {
@@ -22,6 +19,8 @@ public final class StellarisQuality {
       boolean fullResGodRays,
       int auroraLayers,
       int maxParticles,
+      int reliefSteps,
+      int runeCacheSize,
       float frameBudgetMs
    ) {
       public boolean heavyEnabled() {
@@ -30,19 +29,18 @@ public final class StellarisQuality {
    }
 
    public static final Spec FALLBACK = new Spec(
-      ModConfig.StellarisQualityPreset.FALLBACK, 0, 0.5F, 0.5F, 0, 0, false, 0, 512, 3.0F
+      ModConfig.StellarisQualityPreset.FALLBACK, 0, 0.5F, 0.5F, 0, 0, false, 0, 512, 0, StellarisRuneCache.SIZE_CINEMATIC, 3.0F
    );
    public static final Spec BALANCED = new Spec(
-      ModConfig.StellarisQualityPreset.BALANCED, 120, 0.5F, 0.5F, 256, 12, false, 14, 2048, 6.0F
+      ModConfig.StellarisQualityPreset.BALANCED, 120, 0.5F, 0.5F, 256, 12, false, 14, 2048, 56, StellarisRuneCache.SIZE_CINEMATIC, 6.0F
    );
    public static final Spec CINEMATIC = new Spec(
-      ModConfig.StellarisQualityPreset.CINEMATIC, 220, 0.6F, 1.0F, 384, 24, false, 28, 4096, 8.5F
+      ModConfig.StellarisQualityPreset.CINEMATIC, 220, 0.6F, 1.0F, 384, 24, false, 24, 8192, 84, StellarisRuneCache.SIZE_CINEMATIC, 8.5F
    );
    public static final Spec ULTIMATE = new Spec(
-      ModConfig.StellarisQualityPreset.ULTIMATE, 400, 1.0F, 1.0F, 512, 40, true, 40, 8192, 11.5F
+      ModConfig.StellarisQualityPreset.ULTIMATE, 400, 1.0F, 1.0F, 512, 40, true, 24, 16384, 112, StellarisRuneCache.SIZE_ULTIMATE, 11.5F
    );
 
-   /** 动态分辨率离散阶梯（配合零重建 MRT 视口，杜绝抖动与频繁纹理分配）。 */
    private static final float[] SCALE_LADDER = new float[]{0.60F, 0.72F, 0.85F, 1.00F};
    private static final int OVER_BUDGET_FRAMES = 30;
    private static final int UNDER_BUDGET_FRAMES = 120;
@@ -76,12 +74,12 @@ public final class StellarisQuality {
       if (this.debugOverride != null) {
          return this.debugOverride;
       }
-      return ModConfig.CLIENT.stellarisEngine.qualityPreset.getValue();
+      return StellarisConfigSnapshot.current().qualityPreset();
    }
 
    public Spec effectiveSpec() {
       ModConfig.StellarisQualityPreset base = this.configuredPreset();
-      if (!ModConfig.CLIENT.stellarisEngine.gpuAdaptive.getValue() || this.adaptiveDropLevels <= 0) {
+      if (!StellarisConfigSnapshot.current().gpuAdaptive() || this.adaptiveDropLevels <= 0) {
          return of(base);
       }
       int ordinal = Math.max(0, base.ordinal() - this.adaptiveDropLevels);
@@ -89,7 +87,7 @@ public final class StellarisQuality {
       return of(values[Math.min(ordinal, values.length - 1)]);
    }
 
-   /** 返回本帧重型 MRT Pass 的离散动态分辨率缩放比例（0.5 ~ 1.0）。 */
+   /** 返回本帧重型 MRT / 3D 浮雕 Pass 的离散动态分辨率缩放比例（0.5 ~ 1.0）。 */
    public float currentHeavyScale() {
       Spec spec = this.effectiveSpec();
       if (spec.heavyScaleMin >= spec.heavyScaleMax - 1.0E-4F) {
@@ -129,13 +127,12 @@ public final class StellarisQuality {
    }
 
    public void recordFrameGpuMs(float totalMs) {
-      if (!ModConfig.CLIENT.stellarisEngine.gpuAdaptive.getValue() || totalMs <= 0.01F || !Float.isFinite(totalMs)) {
+      if (!StellarisConfigSnapshot.current().gpuAdaptive() || totalMs <= 0.01F || !Float.isFinite(totalMs)) {
          return;
       }
       Spec spec = this.effectiveSpec();
       float budget = spec.frameBudgetMs;
 
-      // 仅按离散阶梯 + 冷却时间调节动态分辨率（配合零重建 MRT 视口完全无卡顿）
       if (spec.heavyScaleMax > spec.heavyScaleMin + 0.01F && this.scaleCooldownTicks <= 0) {
          if (totalMs > budget * 0.88F) {
             this.scaleOverStreak++;

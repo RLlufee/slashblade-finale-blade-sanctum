@@ -168,6 +168,14 @@ public final class ModConfig {
       public final BooleanEntry disableHeavyPassesWithShaderPack = boolValue(
          "stellaris_disable_heavy_passes_with_shader_pack", false, "config.annihilationblade.stellaris_disable_heavy_passes_with_shader_pack.tooltip"
       );
+      /** 开启 Iris/Oculus 光影包时将第一人称手部延后至星穹后处理之后重绘，彻底防止冲击帧与扭曲糊手。 */
+      public final BooleanEntry irisDeferHandWithShaderPack = boolValue(
+         "stellaris_iris_defer_hand_with_shader_pack", true, "config.annihilationblade.stellaris_iris_defer_hand_with_shader_pack.tooltip"
+      );
+      /** 启用 GPU 首次预烘焙 2048²/4096² 距离场与 3D 物理圆管浮雕法阵（允许光柱与粒子真实前后穿插遮挡）。 */
+      public final BooleanEntry relief3dEnabled = boolValue(
+         "stellaris_relief_3d_enabled", true, "config.annihilationblade.stellaris_relief_3d_enabled.tooltip"
+      );
 
       private StellarisEngine() {
          super("stellaris_engine", "config.annihilationblade.stellaris_engine.title");

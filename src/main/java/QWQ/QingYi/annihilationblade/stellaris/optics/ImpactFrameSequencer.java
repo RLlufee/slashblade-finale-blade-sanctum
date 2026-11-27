@@ -1,6 +1,7 @@
 package QWQ.QingYi.annihilationblade.stellaris.optics;
 
 import QWQ.QingYi.annihilationblade.config.ModConfig;
+import QWQ.QingYi.annihilationblade.stellaris.engine.StellarisConfigSnapshot;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -102,10 +103,10 @@ public final class ImpactFrameSequencer {
          return ResolvedBeat.NONE;
       }
 
-      ModConfig.StellarisEngine cfg = ModConfig.CLIENT.stellarisEngine;
-      ModConfig.ImpactFrameMode mode = cfg.impactFrames.getValue();
-      float userScale = (float)(double)cfg.impactFrameIntensity.getValue();
-      float globalFlashScale = (float)(double)ModConfig.CLIENT.clientRenderer.screenFlash.getValue();
+      StellarisConfigSnapshot snap = StellarisConfigSnapshot.current();
+      ModConfig.ImpactFrameMode mode = snap.impactFrames();
+      float userScale = snap.impactFrameIntensity();
+      float globalFlashScale = snap.screenFlash();
       float combinedScale = userScale * globalFlashScale;
       if (mode == ModConfig.ImpactFrameMode.OFF || combinedScale <= 1.0E-3F) {
          return ResolvedBeat.NONE;
@@ -113,7 +114,7 @@ public final class ImpactFrameSequencer {
 
       boolean allowFull = false;
       if (mode == ModConfig.ImpactFrameMode.FULL) {
-         if (cfg.fullImpactWarningAcknowledged.getValue()) {
+         if (snap.fullImpactWarningAcknowledged()) {
             allowFull = true;
          } else {
             this.notifyFullRequiresAck();

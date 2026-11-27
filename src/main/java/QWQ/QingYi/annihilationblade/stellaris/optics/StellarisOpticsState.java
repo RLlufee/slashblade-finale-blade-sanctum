@@ -22,12 +22,13 @@ public final class StellarisOpticsState {
    public float streakTintG = 0.96F;
    public float streakTintB = 1.00F;
 
-   // 2. 自发光专属径向体积光（God Rays，最多 2 个屏幕投影光源）
+   // 2. 自发光专属径向体积光（God Rays，最多 2 个屏幕投影光源 + 真实世界距离供连续深度遮挡）
    public int godRayCount;
    public final float[] godRayU = new float[MAX_GODRAY_SOURCES];
    public final float[] godRayV = new float[MAX_GODRAY_SOURCES];
    public final float[] godRayStrength = new float[MAX_GODRAY_SOURCES];
    public final float[] godRayDecay = new float[MAX_GODRAY_SOURCES];
+   public final float[] godRayDist = new float[MAX_GODRAY_SOURCES];
    public final float[] godRayR = new float[MAX_GODRAY_SOURCES];
    public final float[] godRayG = new float[MAX_GODRAY_SOURCES];
    public final float[] godRayB = new float[MAX_GODRAY_SOURCES];
@@ -85,6 +86,7 @@ public final class StellarisOpticsState {
          this.godRayV[i] = 0.5F;
          this.godRayStrength[i] = 0.0F;
          this.godRayDecay[i] = 0.965F;
+         this.godRayDist[i] = 96.0F;
          this.godRayR[i] = 0.65F;
          this.godRayG[i] = 0.96F;
          this.godRayB[i] = 1.00F;
@@ -170,10 +172,14 @@ public final class StellarisOpticsState {
          return;
       }
       float[] uv = frame.screenUv(worldPos);
-      this.addGodRaySource(uv, strength * cosFade, decay, rgb);
+      this.addGodRaySource(uv, dist, strength * cosFade, decay, rgb);
    }
 
    public void addGodRaySource(float[] screenUv, float strength, float decay, int rgb) {
+      this.addGodRaySource(screenUv, 96.0F, strength, decay, rgb);
+   }
+
+   public void addGodRaySource(float[] screenUv, float worldDistance, float strength, float decay, int rgb) {
       if (screenUv == null || strength <= 1.0E-3F) {
          return;
       }
@@ -205,6 +211,7 @@ public final class StellarisOpticsState {
          this.godRayV[slot] = v;
          this.godRayStrength[slot] = Math.min(2.0F, effective);
          this.godRayDecay[slot] = Math.max(0.85F, Math.min(0.992F, decay));
+         this.godRayDist[slot] = Math.max(2.0F, worldDistance);
          this.godRayR[slot] = ((rgb >> 16) & 0xFF) / 255.0F;
          this.godRayG[slot] = ((rgb >> 8) & 0xFF) / 255.0F;
          this.godRayB[slot] = (rgb & 0xFF) / 255.0F;

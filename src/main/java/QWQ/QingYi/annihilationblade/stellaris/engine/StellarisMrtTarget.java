@@ -52,6 +52,7 @@ public final class StellarisMrtTarget {
       int prevTex = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
       int prevDraw = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
       int prevRead = GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+      int prevPbo = StellarisGlGuard.unbindPixelUnpackBuffer();
       try {
          this.allocWidth = maxWidth;
          this.allocHeight = maxHeight;
@@ -87,6 +88,7 @@ public final class StellarisMrtTarget {
          this.destroy();
          throw throwable;
       } finally {
+         StellarisGlGuard.restorePixelUnpackBuffer(prevPbo);
          GlStateManager._bindTexture(prevTex);
          GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, prevDraw);
          GlStateManager._glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, prevRead);

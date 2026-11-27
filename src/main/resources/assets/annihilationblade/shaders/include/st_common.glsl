@@ -1,4 +1,4 @@
-// Stellaris Engine 公共数学、精确 IEC sRGB 色彩、安全防护、深度法线重建、单色蓝噪声抖动与解析求交库（GLSL 150 原创）
+// Stellaris Engine 公共数学、精确 IEC sRGB 色彩、安全防护、深度法线重建、世界锁定微闪、单色蓝噪声抖动与解析求交库（Step 1.6 原创 GLSL 150）
 
 #define ST_PI 3.14159265359
 #define ST_TAU 6.28318530718
@@ -83,6 +83,20 @@ float stLuma(vec3 c) {
     return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
+// CPU / GPU 同源 32 位无符号整数混洗哈希（供光线步进与多边形降级姿态严格对齐）
+uint stHashU32(uint x) {
+    x ^= x >> 16u;
+    x *= 0x7feb352du;
+    x ^= x >> 15u;
+    x *= 0x846ca68bu;
+    x ^= x >> 16u;
+    return x;
+}
+
+float stHashU32Float(uint x) {
+    return float(stHashU32(x) & 0x00FFFFFFu) / 16777215.0;
+}
+
 // 轻量无三角函数哈希与值噪声
 float stHash11(float p) {
     p = fract(p * 0.1031);
@@ -162,6 +176,21 @@ float stFbm3(vec3 p) {
     return sum;
 }
 
+// 世界空间锁定晶体微粒闪烁：死死锚定在真实方块表面体素上随视角偏转闪烁，彻底摆脱屏幕贴纸感
+float stWorldHashSparkle(vec3 worldPosAbs, vec3 rayDir, float densityScale) {
+    float g = stHash13(floor(worldPosAbs * densityScale));
+    float spec = smoothstep(0.984, 1.0, g);
+    float glint = 0.55 + 0.45 * sin(dot(rayDir, vec3(91.3, 47.7, 13.1)) + g * 43.0);
+    return spec * glint;
+}
+
+// 解析像素脚印估算（完全零 fwidth 依赖，彻底规避动态非一致分支内的 GLSL 导数未定义行为）
+float stAnalyticFootprint(float worldDist, float screenHeight, float patternScale, float absNdotV) {
+    float basePx = (worldDist * 1.45) / max(screenHeight, 1.0);
+    float graze = max(absNdotV, 0.22);
+    return clamp((basePx / graze) * patternScale, 0.0015, 0.25);
+}
+
 // Interleaved Gradient Noise 与时空黄金比例蓝噪声采样
 float stIGN(vec2 fragCoord, float frameIdx) {
     vec2 p = fragCoord + vec2(fract(frameIdx * 0.61803399) * 59.0, fract(frameIdx * 0.38196601) * 37.0);
@@ -174,7 +203,7 @@ vec4 stBlueNoise(sampler2D blueNoiseTex, vec2 fragCoord, float frameIdx) {
     return fract(bn + vec4(frameIdx * 0.61803399, frameIdx * 0.75487767, frameIdx * 0.56984029, frameIdx * 0.43015971));
 }
 
-// 精确位运算 Bayer 矩阵（GLSL 150 整型位交织，8K 分辨率零 float32 精度溢出，严格输出 [0..63]/64）
+// 精确位运算 Bayer 矩阵（GLSL 150 整型位交织，8K 分辨率零 float32 精度溢出）
 float stBayer2(vec2 p) {
     ivec2 c = ivec2(floor(p)) & 1;
     int v = (((c.x ^ c.y) << 1) | c.y);
@@ -203,11 +232,10 @@ float stBayer8(vec2 p) {
     return float(v) * (1.0 / 64.0);
 }
 
-// 单色三角分布蓝噪声抖动：严格无彩噪，彻底消除 8-bit 暗空渐变色带
+// 单色三角分布 Void-and-Cluster 蓝噪声抖动：零彩噪，彻底消除 8-bit 暗空色带且守住纯黑黑位
 vec3 stDither8Blue(vec3 srgbColor, sampler2D blueNoiseTex, vec2 fragCoord, float frameIdx) {
     vec4 bn = stBlueNoise(blueNoiseTex, fragCoord, frameIdx);
     float tri = (bn.r - bn.g) * 0.85;
-    // 纯黑区域（< 0.001）不施加正抖动，守住绝对深空黑洞黑位
     float blackMask = smoothstep(0.0005, 0.004, max(max(srgbColor.r, srgbColor.g), srgbColor.b));
     return stSaturate3(srgbColor + vec3(tri * blackMask / 255.0));
 }
@@ -234,7 +262,7 @@ vec3 stReconstructWorldRel(float depth, vec2 uv, mat4 invProj, mat4 invView) {
     return (invView * vec4(vp, 0.0)).xyz;
 }
 
-// 最小斜率深度法线重建（含细前景/天空边界跳变防护）：彻底抑制方块棱角与栅栏边缘的法线炸裂
+// 最小斜率深度法线重建（含细前景/天空边界跳变防护）：彻底抑制方块棱角与栅栏边缘法线炸裂
 vec3 stReconstructNormal3x3(sampler2D depthTex, vec2 uv, vec2 outSize, mat4 invProj, mat4 invView) {
     vec2 px = 1.0 / max(outSize, vec2(1.0));
     float dC = texture(depthTex, uv).r;

@@ -8,7 +8,10 @@
 //  - 全部 pow/atan/normalize 严格走安全封装，导数均在 discard 之前求取，杜绝 NaN 与驱动未定义行为。
 uniform sampler2D Sampler0; // 共享 R32F 场景深度
 uniform sampler2D Sampler1; // 无缝流场噪声贴图（R=fBm云雾, G=Worley脊线, BA=旋度偏移）
+uniform sampler2D Sampler2; // 3D 物理浮雕法阵 RGBA32F ReliefMeta（r=最近命中距离, g=透射率）
 uniform mat4 ProjMat;
+uniform vec2 FxOutSize;
+uniform vec4 FxReliefParams; // xy=reliefUvMax, z=hasRelief(>0.5), w=0
 uniform float FxStyle;
 uniform float FxEmission;
 uniform float FxSoft;
@@ -36,13 +39,32 @@ float stLinearDepth(float depth) {
 }
 
 float stDepthMask() {
-    float depth = texelFetch(Sampler0, ivec2(gl_FragCoord.xy), 0).r;
+    ivec2 dim = textureSize(Sampler0, 0);
+    ivec2 coord = clamp(ivec2(gl_FragCoord.xy), ivec2(0), dim - ivec2(1));
+    float depth = texelFetch(Sampler0, coord, 0).r;
     float scene = depth >= 0.9999 ? 1.0e6 : stLinearDepth(depth);
     float diff = scene - viewDistance;
     if (FxSoft <= 0.0) {
         return diff > -(0.03 + viewDistance * 0.002) ? 1.0 : 0.0;
     }
     return clamp(diff / FxSoft, 0.0, 1.0);
+}
+
+// 3D 物理浮雕法阵真实前后穿孔遮挡：光柱/剑气位于立体管壁后方时自动按透射率淡隐
+float stReliefMask() {
+    if (FxReliefParams.z < 0.5) {
+        return 1.0;
+    }
+    vec2 screenUv = clamp(gl_FragCoord.xy / max(FxOutSize, vec2(1.0)), vec2(0.0005), vec2(0.9995));
+    vec2 safeMax = clamp(FxReliefParams.xy, vec2(0.05), vec2(1.0));
+    vec2 rUv = clamp(screenUv * safeMax, vec2(0.0005), max(vec2(0.0005), safeMax - vec2(0.0005)));
+    vec4 meta = texture(Sampler2, rUv);
+    if (meta.r >= 5.0e5) {
+        return 1.0;
+    }
+    float fragDist = length(relativePos);
+    float behind = smoothstep(meta.r - 0.12, meta.r + 0.16, fragDist);
+    return mix(1.0, stSaturate(meta.g), behind);
 }
 
 float stOccluderMask() {
@@ -777,7 +799,7 @@ void main() {
     gCurtainWidth = fwidth(texCoord0.x);
     gLinColor = stSrgbToLinear(vertexColor.rgb);
 
-    float mask = stDepthMask() * stOccluderMask();
+    float mask = stDepthMask() * stOccluderMask() * stReliefMask();
     if (mask <= 0.0 || vertexColor.a <= 0.0) {
         discard;
     }

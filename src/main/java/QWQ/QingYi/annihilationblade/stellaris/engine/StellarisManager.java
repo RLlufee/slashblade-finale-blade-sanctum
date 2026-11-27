@@ -6,6 +6,7 @@ import QWQ.QingYi.annihilationblade.render.client.core.FxFrame;
 import QWQ.QingYi.annihilationblade.stellaris.optics.AudioSilencer;
 import QWQ.QingYi.annihilationblade.stellaris.optics.StellarisOpticsState;
 import QWQ.QingYi.annihilationblade.stellaris.particles.StellarisParticles;
+import QWQ.QingYi.annihilationblade.stellaris.particles.StellarisRibbons;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -20,9 +21,14 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
 /**
- * 星穹引擎（Stellaris Engine）客户端调度中心。
+ * 星穹引擎（Stellaris Engine）客户端调度中心（Step 1.6 升级版）。
  * <p>
- * 支持一次性特效与带服务端同步句柄的持续特效（领域 / 结界 / SA），满载时优先淘汰一次性特效以保护持续大招不中断。
+ * <ul>
+ *   <li>支持持续句柄替换时的平滑取消淡出剥离（{@link StellarisEffect#detachHandleForFade(int)}），绝不 1 帧硬切；</li>
+ *   <li>新增 {@link #renderPreTranslucent(FxFrame)} 钩子，于 {@code AFTER_BLOCK_ENTITIES} 执行前透明星穹绘制；</li>
+ *   <li>新增暂停安全震屏时钟（单人 ESC 暂停时画面稳如泰山不抽搐）；</li>
+ *   <li>统一托管万级 GPU 实例化粒子池 {@link StellarisParticles} 与 3D 能量丝带池 {@link StellarisRibbons}。</li>
+ * </ul>
  */
 @OnlyIn(Dist.CLIENT)
 public final class StellarisManager {
@@ -32,11 +38,14 @@ public final class StellarisManager {
    private static final Int2ObjectOpenHashMap<StellarisEffect> SUSTAINED = new Int2ObjectOpenHashMap<>();
    private static final StellarisOpticsState OPTICS = new StellarisOpticsState();
    private static final StellarisParticles PARTICLES = new StellarisParticles();
+   private static final StellarisRibbons RIBBONS = new StellarisRibbons();
 
    private static boolean ticking;
    private static ClientLevel lastLevel;
    private static float shake;
    private static float fovKick;
+   private static double shakeClockSec;
+   private static long lastShakeNs;
    private static boolean shakeRegistered;
 
    private StellarisManager() {
@@ -68,10 +77,11 @@ public final class StellarisManager {
          clear();
       }
       while (ACTIVE.size() >= MAX_ACTIVE) {
-         // 优先淘汰最旧的一次性特效，保留持续特效（曲率领域、SA 等）
+         // 优先淘汰正在取消淡出或最旧的一次性特效，保护持续大招不中断
          int victim = 0;
          for (int i = 0; i < ACTIVE.size(); i++) {
-            if (ACTIVE.get(i).handle() < 0) {
+            StellarisEffect cand = ACTIVE.get(i);
+            if (cand.isCancelling() || cand.handle() < 0) {
                victim = i;
                break;
             }
@@ -82,8 +92,8 @@ public final class StellarisManager {
       if (effect.handle() >= 0) {
          StellarisEffect previous = SUSTAINED.put(effect.handle(), effect);
          if (previous != null && previous != effect) {
-            ACTIVE.remove(previous);
-            previous.onRemoved();
+            // 剥离旧句柄进入平滑取消淡出，而非生硬删帧
+            previous.detachHandleForFade(10);
          }
       }
    }
@@ -105,6 +115,10 @@ public final class StellarisManager {
       return PARTICLES;
    }
 
+   public static StellarisRibbons ribbons() {
+      return RIBBONS;
+   }
+
    public static int activeEffectCount() {
       return ACTIVE.size();
    }
@@ -117,6 +131,7 @@ public final class StellarisManager {
       PENDING_ADD.clear();
       SUSTAINED.clear();
       PARTICLES.clear();
+      RIBBONS.resetFrame();
       StellarisCloudSuppression.clear();
       AudioSilencer.restoreNow();
       shake = 0.0F;
@@ -140,6 +155,7 @@ public final class StellarisManager {
 
    public static void onClientTick(ClientLevel level, boolean paused) {
       ensureShakeRegistered();
+      StellarisConfigSnapshot.refresh();
       if (level != lastLevel) {
          lastLevel = level;
          clear();
@@ -189,6 +205,18 @@ public final class StellarisManager {
       }
    }
 
+   /** 于 {@code AFTER_BLOCK_ENTITIES}（不透明方块/实体刚渲染完毕、水体与透明玻璃之前）执行可选前置绘制钩子。 */
+   public static void renderPreTranslucent(FxFrame frame) {
+      if (ACTIVE.isEmpty() || !StellarisPipeline.INSTANCE.active()) {
+         return;
+      }
+      for (StellarisEffect effect : ACTIVE) {
+         if (effect.focus().distanceTo(frame.camera) <= effect.cullDistance()) {
+            effect.renderPreTranslucent(frame);
+         }
+      }
+   }
+
    public static void renderFrame(FxFrame frame) {
       shake = 0.0F;
       fovKick = 0.0F;
@@ -210,21 +238,31 @@ public final class StellarisManager {
          if (effect.focus().distanceTo(frame.camera) <= effect.cullDistance()) {
             visible.add(effect);
             effect.contributeOptics(frame, OPTICS);
-            strongestShake = Math.max(strongestShake, effect.shake(frame));
+            strongestShake = Math.max(strongestShake, effect.shake(frame) * effect.cancelAlpha(frame.partialTick));
          }
       }
       shake = strongestShake;
       fovKick = OPTICS.fovKick;
 
-      StellarisPipeline.INSTANCE.render(frame, visible, OPTICS, PARTICLES);
+      StellarisPipeline.INSTANCE.render(frame, visible, OPTICS, PARTICLES, RIBBONS);
    }
 
    private static void contributeShake(float partialTick, float[] out) {
+      Minecraft mc = Minecraft.getInstance();
+      long now = System.nanoTime();
+      if (!mc.isPaused()) {
+         if (lastShakeNs != 0L) {
+            double dt = Math.max(0.0, Math.min(0.1, (now - lastShakeNs) / 1.0E9));
+            shakeClockSec += dt;
+         }
+      }
+      lastShakeNs = now;
+
       float amount = shake * shake;
-      if (amount <= 1.0E-4F) {
+      if (amount <= 1.0E-4F || mc.isPaused()) {
          return;
       }
-      double t = (System.nanoTime() % 100_000_000_000L) / 1.0E9;
+      double t = shakeClockSec;
       out[0] += (float)(Math.sin(t * 41.0) * 0.6 + Math.sin(t * 67.0) * 0.4) * 2.4F * amount;
       out[1] += (float)(Math.sin(t * 47.0 + 1.1) * 0.6 + Math.sin(t * 73.0) * 0.4) * 2.0F * amount;
       out[2] += (float)Math.sin(t * 31.0 + 0.5) * 2.6F * amount;

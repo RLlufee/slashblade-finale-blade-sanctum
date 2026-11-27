@@ -184,13 +184,37 @@ public final class FxManager {
             matricesCaptured = true;
             FxPipeline.INSTANCE.beginFrame();
          }
-      } else if (stage == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
-         // 光影包启用时 AFTER_WEATHER 仍在光影内部 FBO 中，需跳过此处并延后到 AFTER_LEVEL 再抓取已回写的主深度
+      } else if (stage == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
+         // 在原版半透明水体/冰块/彩色玻璃写入深度之前抢先抓取纯净不透明世界深度，
+         // 避免隔水或隔玻璃观察地表遥测、重力漏斗、黑洞与焦痕时被水面一刀截断；
+         // 光影包启用时此刻仍在光影内部 G-Buffer 中，需跳至 AFTER_LEVEL 再抓取已回写的主深度。
          Vec3 camPos = event.getCamera().getPosition();
          boolean needFxDepth = !ACTIVE.isEmpty() && FxPipeline.INSTANCE.active() && hasVisible(camPos);
          boolean needStellarisDepth = StellarisManager.hasWorkToRender(camPos);
          if ((needFxDepth || needStellarisDepth) && matricesCaptured && !FxCompat.shadowPass() && !FxCompat.shaderPackActive()) {
             FxPipeline.INSTANCE.captureDepth();
+            if (needStellarisDepth) {
+               Minecraft mc = Minecraft.getInstance();
+               if (mc.level != null) {
+                  float time = ((mc.level.getGameTime() % 72000L) + event.getPartialTick()) / 20.0F;
+                  FxFrame earlyFrame = new FxFrame(
+                     mc.level, camPos, event.getPartialTick(), time, VIEW, PROJECTION,
+                     event.getCamera().getLeftVector(), event.getCamera().getUpVector(),
+                     mc.getMainRenderTarget().width, mc.getMainRenderTarget().height
+                  );
+                  StellarisManager.renderPreTranslucent(earlyFrame);
+               }
+            }
+         }
+      } else if (stage == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+         // 兜底补抓：若第三方模组跳过 AFTER_BLOCK_ENTITIES，则在 AFTER_WEATHER 补抓深度
+         if (!FxPipeline.INSTANCE.isDepthCaptured()) {
+            Vec3 camPos = event.getCamera().getPosition();
+            boolean needFxDepth = !ACTIVE.isEmpty() && FxPipeline.INSTANCE.active() && hasVisible(camPos);
+            boolean needStellarisDepth = StellarisManager.hasWorkToRender(camPos);
+            if ((needFxDepth || needStellarisDepth) && matricesCaptured && !FxCompat.shadowPass() && !FxCompat.shaderPackActive()) {
+               FxPipeline.INSTANCE.captureDepth();
+            }
          }
       } else if (stage == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
          try {
